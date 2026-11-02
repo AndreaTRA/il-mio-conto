@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black"><meta name="apple-mobile-web-app-title" content="Flowly">
   <meta name="description" content="Saldi mensili, crescita e obiettivi. Una web app personale che funziona anche offline.">
   <title>Flowly · Il tuo bilancio personale</title><link rel="icon" href="flowly-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" sizes="180x180" href="flowly-icon-180.png"><link rel="manifest" href="manifest.webmanifest"><link rel="preload" href="manrope-400.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="app.css">
-  <link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="goals.css"><link rel="stylesheet" href="notifications.css"><script src="app.js" type="module"></script>
+  <link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="goals.css"><link rel="stylesheet" href="notifications.css"><link rel="stylesheet" href="privacy.css"><script src="app.js" type="module"></script>
 </head>
 <body>
   <div id="update-banner" class="notice" hidden><span>È disponibile un aggiornamento dell’app.</span> <button id="apply-update" class="button secondary" type="button">Aggiorna app</button></div>
@@ -26,7 +26,7 @@
       <div class="sidebar-bottom"><span class="privacy-dot"></span><div><strong>Il tuo spazio personale</strong><p>Dati su questo dispositivo</p></div></div>
     </aside>
     <main id="main" tabindex="-1">
-      <header class="topbar"><a class="mobile-brand" href="#panoramica" aria-label="Flowly, panoramica"><span class="brand-mark" aria-hidden="true">f</span>flowly</a><div class="breadcrumb">Conto personale <span>/</span> <span id="breadcrumb">Panoramica</span></div><button id="connection" class="connection" type="button">Dati sul dispositivo</button></header>
+      <header class="topbar"><a class="mobile-brand" href="#panoramica" aria-label="Flowly, panoramica"><span class="brand-mark" aria-hidden="true">f</span>flowly</a><div class="breadcrumb">Conto personale <span>/</span> <span id="breadcrumb">Panoramica</span></div><div class="topbar-actions"><button id="toggle-numbers" class="numbers-toggle" type="button" aria-label="Mostra i numeri" title="Mostra i numeri" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="m3 3 18 18"/></svg></button><button id="connection" class="connection" type="button">Dati sul dispositivo</button></div></header>
       <div id="offline-banner" class="notice" hidden></div>
       <div id="content" aria-busy="true"><div class="loading">Apro Flowly…</div></div>
       <footer class="main-footer"><span>Saldi al primo giorno del mese.</span><span id="saved-state">I dati vengono salvati sul dispositivo.</span></footer>

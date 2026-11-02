@@ -1,0 +1,8 @@
+.topbar-actions{display:flex;align-items:center;gap:10px;min-width:0}
+.numbers-toggle{display:inline-grid;place-items:center;flex:0 0 42px;width:42px;height:42px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--muted);cursor:pointer}
+.numbers-toggle:hover,.numbers-toggle:focus-visible{color:var(--ink);border-color:var(--violet-light)}
+.numbers-toggle svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.numbers-toggle.revealed .eye-slash{display:none}
+.private-chart{min-height:230px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;text-align:center;color:var(--muted);font-size:13px;padding:20px}
+.private-chart p:first-child{font-size:17px;color:var(--ink)}
+@media(max-width:800px){.topbar-actions{gap:7px}.numbers-toggle{width:38px;height:38px;flex-basis:38px;padding:8px}.topbar-actions .connection{max-width:calc(100vw - 180px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}

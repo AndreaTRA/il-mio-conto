@@ -10,10 +10,12 @@ const $ = selector => document.querySelector(selector);
 const content = $('#content');
 const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: 'always' });
 const percent = new Intl.NumberFormat('it-IT', { style: 'percent', maximumFractionDigits: 1 });
-const money = value => value == null ? 'Non disponibile' : euro.format(value / 100);
-const pct = value => value == null ? 'n.d.' : percent.format(value);
-const signed = value => value == null ? 'n.d.' : `${value > 0 ? '+' : ''}${money(value)}`;
-const signedRate = value => value == null ? 'n.d.' : `${value > 0 ? '+' : ''}${pct(value)}`;
+let numbersVisible = false;
+const concealed = '••••';
+const money = value => !numbersVisible ? concealed : value == null ? 'Non disponibile' : euro.format(value / 100);
+const pct = value => !numbersVisible ? concealed : value == null ? 'n.d.' : percent.format(value);
+const signed = value => !numbersVisible ? concealed : value == null ? 'n.d.' : `${value > 0 ? '+' : ''}${money(value)}`;
+const signedRate = value => !numbersVisible ? concealed : value == null ? 'n.d.' : `${value > 0 ? '+' : ''}${pct(value)}`;
 const color = value => value == null ? '' : value < 0 ? 'negative' : value > 0 ? 'positive' : '';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const monthDate = month => new Date(`${month}-01T12:00:00`);
@@ -49,6 +51,7 @@ function toast(message, error = false) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => node.hidden = true, error ? 8000 : 4000);
 }
 function lockAccess() {
+  numbersVisible = false;
   accessGranted = false; currentUser = null; $('#app-shell').hidden = true;
   document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
   content.replaceChildren(); dirtyForms.clear();
@@ -109,7 +112,7 @@ function statsMarkup(summary) {
 function goalPanel(summary) {
   return `<section class="panel goal-panel" aria-labelledby="goal-card-title"><div class="goal-top"><p class="panel-label" id="goal-card-title">Obiettivo al ${state.settings.deadline.slice(0, 4)}</p><p class="goal-remaining">${summary.gap === null ? '<span>Da calcolare</span>Inserisci un saldo' : summary.gap === 0 ? 'Obiettivo raggiunto' : `<span>Mancano</span>${money(summary.gap)}`}</p><p class="goal-target">Obiettivo: <strong>${money(state.settings.targetCents)}</strong></p></div><div>
     <div class="goal-progress"><span>Quota raggiunta</span><strong>${summary.progress === null ? 'n.d.' : pct(summary.progress)}</strong></div>
-    <progress max="100" value="${Math.max(0, Math.min(100, (summary.progress || 0) * 100))}" aria-label="Percentuale dell’obiettivo raggiunta"></progress>
+    <progress max="100" value="${Math.max(0, Math.min(100, (numbersVisible ? summary.progress || 0 : 0) * 100))}" aria-label="Percentuale dell’obiettivo raggiunta"></progress>
     <p class="goal-note">${deadlineLabel()} · <a href="#obiettivo">Gestisci obiettivo ↗</a></p></div></section>`;
 }
 function savingsPanel(summary) {
@@ -133,6 +136,7 @@ function availableYears() {
   return [...new Set([new Date().getFullYear(), ...state.entries.map(entry => Number(entry.month.slice(0, 4))), Number(tableYear)])].sort((a, b) => a - b);
 }
 function chart(summary) {
+  if (!numbersVisible) return '<section class="panel chart-panel"><h2>Come sta andando</h2><div class="private-chart"><p>Grafico nascosto</p><p>Premi l’occhio per mostrare i dati economici.</p></div></section>';
   const all = chartYear === 'all';
   const entries = all && summary.recorded.length ? summary.recorded : Model.monthsForYear(all ? tableYear : chartYear).map(month => Model.entryFor(state, month));
   const start = Model.monthIndex(entries[0].month), end = Model.monthIndex(entries.at(-1).month), span = Math.max(1, end - start);
@@ -177,7 +181,7 @@ function chart(summary) {
 function overview(summary) {
   const onboarding = summary.recorded.length ? '' : `<section class="notice onboarding"><strong>Inizia con i tuoi dati</strong><p>Su iPhone aggiungi prima l’app alla Home, aprila dall’icona e importa il backup dei saldi. I saldi importati si sincronizzano con il tuo account.</p><button class="button secondary" data-action="import">Importa backup</button></section>`;
   return heading('PANORAMICA', 'Tutto sotto controllo.', summary.last ? `Situazione al ${asof(summary.last.month)}.` : 'Registra i tuoi saldi, mese dopo mese.', addButton()) + onboarding +
-    `<div class="summary-grid"><div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">Saldo registrato</p><p class="balance-value">${summary.last ? esc((summary.last.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.last ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">Conto personale</span></div></section>${goalPanel(summary)}${savingsPanel(summary)}</div>
+    `<div class="summary-grid"><div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">Saldo registrato</p><p class="balance-value">${!numbersVisible ? concealed : summary.last ? esc((summary.last.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.last ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">Conto personale</span></div></section>${goalPanel(summary)}${savingsPanel(summary)}</div>
     ${statsMarkup(summary)}</div>${chart(summary)}<section class="panel table-panel"><div class="table-intro"><div><h2>Gli ultimi saldi</h2><p>Un riferimento, all’inizio di ogni mese.</p></div><a class="button plain" href="#saldi">Vedi tutti →</a></div>${summary.recorded.length ? monthlyTable(summary.recorded.slice(-4).reverse()) : '<p class="empty-state">Nessun saldo registrato.</p>'}</section>`;
 }
 function balances() {
@@ -189,7 +193,7 @@ function balances() {
 function goal(summary) {
   const text = neededNote(summary);
   return heading('IL TUO TRAGUARDO', 'Obiettivo', 'Scegli importo e scadenza. Puoi aggiornarli nel tempo.') +
-    `<div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano l’ultimo saldo disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="text" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">DA RISPARMIARE DA OGGI</p><p class="big-needed">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Calcolo al ${dateLabel(summary.plan.today)}, con un versamento anche nel mese in corso. Nessun rendimento futuro viene ipotizzato.</p></section></div>
+    `<div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano l’ultimo saldo disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="${numbersVisible ? 'text' : 'password'}" autocomplete="off" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">DA RISPARMIARE DA OGGI</p><p class="big-needed">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Calcolo al ${dateLabel(summary.plan.today)}, con un versamento anche nel mese in corso. Nessun rendimento futuro viene ipotizzato.</p></section></div>
     <section class="panel table-panel"><div class="table-intro"><div><h2>Anno per anno</h2><p>Dal primo all’ultimo saldo disponibile nell’anno.</p></div></div>${summary.annual.length ? `<div class="table-scroll"><table><thead><tr><th>Anno</th><th class="amount">Mesi registrati</th><th class="amount">Ultimo saldo</th><th class="amount">Variazione nell’anno</th></tr></thead><tbody>${summary.annual.map(annual => `<tr><td>${annual.year}</td><td class="amount">${annual.count}</td><td class="amount">${money(annual.last)}</td><td class="amount ${color(annual.change)}">${signed(annual.change)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Gli anni appariranno con i primi saldi.</p>'}<p class="info-caption">${summary.up} mesi in crescita · ${summary.down} in decrescita · ${summary.stable} stabili · ${summary.over} saldi pari o superiori all’obiettivo.</p></section>`;
 }
 function cloudMarkup() {
@@ -220,12 +224,27 @@ function notificationsView(summary) {
   return heading('PROMEMORIA', 'Notifiche', 'Dal giorno 1 di ogni mese, ti ricordo il saldo da inserire entro il 5. Il promemoria resta attivo finché lo salvi.') +
     (reminders.length ? `<p class="record-summary" role="status">${reminders.length} ${reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}. Si aggiornano automaticamente anche dagli altri dispositivi.</p><div class="notification-list">${visible.map(item => `<section class="panel notification-card"><div><span class="notification-status ${item.overdue ? 'overdue' : ''}">${item.overdue ? 'In ritardo' : 'Da compilare entro il 5'}</span><h2>Saldo di ${esc(monthLabel(item.month))}</h2><p>Inserisci il saldo al ${asof(item.month)}, prima dei movimenti di quel giorno. Questo promemoria rimane finché non registri il saldo.</p></div><button class="button primary" data-edit="${item.month}">Inserisci saldo<span class="sr-only"> ${esc(monthLabel(item.month))}</span></button></section>`).join('')}</div>${reminders.length > pageSize ? `<div class="notification-pages"><button class="button secondary" data-notification-page="-1" ${notificationPage === 0 ? 'disabled' : ''}>Più recenti</button><span>Pagina ${notificationPage + 1} di ${Math.ceil(reminders.length / pageSize)}</span><button class="button secondary" data-notification-page="1" ${(notificationPage + 1) * pageSize >= reminders.length ? 'disabled' : ''}>Precedenti</button></div>` : ''}` : '<section class="panel notification-empty"><h2>Tutto aggiornato</h2><p>Non ci sono saldi da inserire. Il prossimo promemoria comparirà all’inizio del mese successivo, se il relativo saldo manca.</p></section>');
 }
+function setNumbersVisible(visible) {
+  numbersVisible = visible;
+  // Re-render masked text without discarding an unfinished goal edit.
+  const form = $('#goal-form');
+  const draft = form ? { amount: $('#goal-amount').value, deadline: $('#goal-deadline').value, error: $('#goal-error').textContent } : null;
+  const focused = document.activeElement?.id;
+  render();
+  if (draft && $('#goal-form')) { $('#goal-amount').value = draft.amount; $('#goal-deadline').value = draft.deadline; $('#goal-error').textContent = draft.error; }
+  if (document.visibilityState === 'visible' && focused) document.getElementById(focused)?.focus({ preventScroll: true });
+}
 function render() {
   if (!accessGranted) return;
   const view = route(); $('#breadcrumb').textContent = titles[view];
   document.querySelectorAll('[data-view]').forEach(link => { const active = link.dataset.view === view; link.classList.toggle('active', active); if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
   content.setAttribute('aria-busy', 'false');
   if (!state) return;
+  const visibilityButton = $('#toggle-numbers');
+  const visibilityLabel = numbersVisible ? 'Nascondi i numeri' : 'Mostra i numeri';
+  visibilityButton.setAttribute('aria-label', visibilityLabel); visibilityButton.title = visibilityLabel;
+  visibilityButton.setAttribute('aria-pressed', String(numbersVisible));
+  visibilityButton.classList.toggle('revealed', numbersVisible);
   const summary = Model.stats(state); summary.plan = Model.goalPlan(state, todayDate()); planDate = summary.plan.today;
   summary.reminders = Model.balanceReminders(state, planDate);
   const badge = $('#notification-count'), notificationLink = $('[data-view="notifiche"]');
@@ -264,6 +283,7 @@ async function restore() {
   if (await confirmAction('Ripristinare il salvataggio precedente?', `${Model.stats(previous).recorded.length} saldi. I dati attuali saranno conservati come salvataggio precedente.${state.sync ? ' Le modifiche verranno sincronizzate anche sugli altri dispositivi.' : ''}`, 'Ripristina')) { await persist(previous); toast('Salvataggio ripristinato.'); }
 }
 document.addEventListener('click', async event => {
+  if (event.target.closest('#toggle-numbers')) { setNumbersVisible(!numbersVisible); return; }
   const close = event.target.closest('[data-close]'); if (close) { close.closest('dialog').close(); return; }
   const edit = event.target.closest('[data-edit]'); if (edit) { openEntry(edit.dataset.edit); return; }
   const step = event.target.closest('[data-year-step]'); if (step) { tableYear += Number(step.dataset.yearStep); render(); return; }
@@ -375,7 +395,7 @@ onCloudChange(async update => {
     else if (route() === 'backup') { const panel = $('#cloud-panel'); if (panel) panel.outerHTML = cloudMarkup(); }
   } catch (error) { toast(error.message, true); }
 });
-document.addEventListener('visibilitychange', async () => { if (state && document.visibilityState === 'visible' && !hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
+document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'hidden') setNumbersVisible(false); if (state && document.visibilityState === 'visible' && !hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
 try {
   state = await Storage.load(); const last = Model.stats(state).last;
   if (last) { tableYear = Number(last.month.slice(0, 4)); chartYear = String(tableYear); }
@@ -398,3 +418,6 @@ try {
   const message = document.createElement('p'); message.textContent = `Non posso aprire l’archivio: ${error.message} I dati esistenti non sono stati sostituiti.`;
   const button = document.createElement('button'); button.className = 'button secondary'; button.dataset.action = 'recover'; button.textContent = 'Esporta archivio da recuperare'; panel.append(message, button); content.append(panel);
 }
+
+window.addEventListener('pagehide', () => setNumbersVisible(false));
+window.addEventListener('pageshow', event => { if (event.persisted) setNumbersVisible(false); });
