@@ -95,3 +95,29 @@ test('CSV includes new years and escapes formulas and delimiters in notes', () =
   assert.ok(csv.includes('"0,00"'));
   assert.ok(csv.includes('"Riga\ncon ""virgolette"""'));
 });
+
+test('saving plan starts today, even when the latest snapshot is older', () => {
+ const state=add(M.emptyState(),'2026-10',1_000_000);
+ const plan=M.goalPlan(state,'2026-11-02');
+ assert.equal(plan.monthsLeft,50);assert.equal(plan.missingCents,4_000_000);assert.equal(plan.monthlyCents,80_000);
+ assert.equal(M.stats(state).months,51);
+ assert.equal(plan.last.month,'2026-10');
+});
+test('saving deposits round up, respect a passed deadline and preserve zero', () => {
+ const state=add(M.emptyState(),'2030-11',4_999_999);
+ assert.equal(M.goalPlan(state,'2030-11-30').monthlyCents,1);
+ assert.equal(M.goalPlan(state,'2030-12-31').monthlyCents,1);
+ assert.equal(M.goalPlan(state,'2031-01-01').monthlyCents,null);
+ assert.equal(M.goalPlan(state,'2031-01-01').deadlinePassed,true);
+ const reached=add(state,'2030-12',5_100_000);
+ assert.equal(M.goalPlan(reached,'2031-01-01').monthlyCents,0);
+ const zero=add(M.emptyState(),'2026-11',0);
+ assert.equal(M.goalPlan(zero,'2026-11-02').missingCents,5_000_000);
+});
+test('a future snapshot is not counted as a current balance', () => {
+ let state=add(M.emptyState(),'2035-01',8_000_000);
+ assert.equal(M.goalPlan(state,'2026-11-02').monthlyCents,null);
+ state=add(state,'2026-10',2_000_000);
+ assert.equal(M.goalPlan(state,'2026-11-02').missingCents,3_000_000);
+ assert.throws(()=>M.goalPlan(state,'2026-02-30'));
+});

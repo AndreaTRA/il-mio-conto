@@ -54,7 +54,7 @@ export function emptyState() {
 }
 /** Accepts old 60-month backups, discarding only their empty placeholder rows. */
 export function validateState(raw) {
-  if (!raw || ![1, 2].includes(raw.schemaVersion)) throw new Error('Il file non è un backup compatibile di Il mio conto.');
+  if (!raw || ![1, 2].includes(raw.schemaVersion)) throw new Error('Il file non è un backup compatibile con Flowly.');
   const target = raw.settings?.targetCents, deadline = raw.settings?.deadline;
   if (!Number.isSafeInteger(target) || target <= 0 || target > MAX_CENTS) throw new Error('L’obiettivo deve essere un importo positivo.');
   if (!isDate(deadline)) throw new Error('La data dell’obiettivo non è valida.');
@@ -86,6 +86,18 @@ export function deltaFor(state, month) {
 export function remainingMonths(month, deadline) {
   if (!isDate(deadline)) throw new Error('Scadenza non valida.');
   return Math.max(0, monthIndex(deadline.slice(0, 7)) - monthIndex(month) + 1);
+}
+/** Saving plan as of today: equal monthly deposits, including the current month.
+ * Future snapshots never count as money already available. Amounts round up to
+ * a whole cent so the suggested deposits cover the target. */
+export function goalPlan(state, today) {
+  if (!isDate(today)) throw new Error('La data di calcolo non è valida.');
+  const last = state.entries.filter(entry => entry.balanceCents !== null && entry.month <= today.slice(0, 7)).sort((a, b) => a.month.localeCompare(b.month)).at(-1) || null;
+  const monthsLeft = today > state.settings.deadline ? 0 : remainingMonths(today.slice(0, 7), state.settings.deadline);
+  const missingCents = last ? Math.max(0, state.settings.targetCents - last.balanceCents) : null;
+  return { today, last, monthsLeft, missingCents,
+    monthlyCents: missingCents === null ? null : missingCents === 0 ? 0 : monthsLeft ? Math.ceil(missingCents / monthsLeft) : null,
+    deadlinePassed: today > state.settings.deadline && missingCents !== null && missingCents > 0 };
 }
 export function stats(state) {
   const recorded = state.entries.filter(entry => entry.balanceCents !== null).sort((a, b) => a.month.localeCompare(b.month));

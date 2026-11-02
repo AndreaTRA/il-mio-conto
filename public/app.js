@@ -1,8 +1,9 @@
 import * as Model from './model.js';
 import * as Storage from './storage.js';
 import { initializePwa, isInstalled } from './pwa.js';
-import { cloud, onCloudChange, initializeCloud, sendCode, verifyCode, verifyEmailLink, takeRedirectSession, acceptRedirectSession } from './cloud.js';
-import { samePayload } from './sync-merge.js';
+import { cloud, onCloudChange, initializeCloud, sendCode, verifyCode, verifyEmailLink, takeRedirectSession, acceptRedirectSession, session, signIn, requestPasswordRecovery, verifyRecoveryLink, resetPassword } from './cloud.js';
+import { samePayload, sameIdentity } from './sync-merge.js';
+import { createAuthUi } from './auth-ui.js';
 
 const incomingAccess = takeRedirectSession().then(session => ({ session }), error => ({ error }));
 const $ = selector => document.querySelector(selector);
@@ -23,24 +24,56 @@ const deadlineLabel = () => new Date(`${state.settings.deadline}T12:00:00`).toLo
 const currentMonth = () => {
   const now = new Date(); return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 };
-const titles = { panoramica: 'Panoramica', saldi: 'Saldi mensili', obiettivo: 'Obiettivo', backup: 'Backup e dispositivi' };
+const todayDate = () => {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+const dateLabel = date => new Date(date + 'T12:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+const titles = { panoramica: 'Panoramica', saldi: 'Saldi mensili', obiettivo: 'Obiettivo', backup: 'Backup e dispositivi', account: 'Account e sicurezza' };
 const route = () => Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : 'panoramica';
 let state, tableYear = new Date().getFullYear(), chartYear = String(tableYear), toastTimer;
 let pwaStatus = 'preparing', activateUpdate;
 let pendingEmail = '';
+let accessGranted = false, authReady = false, currentUser = null;
+let planDate = '';
+const authUi = createAuthUi({ root: $('#auth-root'), signIn, recover: requestPasswordRecovery, verifyLink: verifyRecoveryLink, resetPassword, onAuthenticated: openAuthenticatedArchive });
+authUi.show('loading');
 const dirtyForms = new Set();
 const hasPendingUiEdit = () => Boolean(document.querySelector('dialog[open]') || dirtyForms.size);
+setInterval(() => { if (accessGranted && planDate !== todayDate() && !hasPendingUiEdit()) render(); }, 60000);
 
 function toast(message, error = false) {
   const node = $('#toast'); node.textContent = message; node.className = error ? 'error' : ''; node.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => node.hidden = true, error ? 8000 : 4000);
 }
+function lockAccess() {
+  accessGranted = false; currentUser = null; $('#app-shell').hidden = true;
+  document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+  content.replaceChildren(); dirtyForms.clear();
+  if ($('#auth-root').hidden || authUi.mode === 'loading') authUi.show('login');
+}
+async function openAuthenticatedArchive() {
+  const active = await session();
+  if (!active) throw new Error('Accedi per aprire il tuo archivio.');
+  const latest = await Storage.load();
+  if (latest.sync && !sameIdentity(latest.sync, { projectUrl: active.projectUrl, userId: active.user.id })) {
+    await cloud.logout(); throw new Error('Questo dispositivo contiene l’archivio di un altro account. Accedi con l’account originale.');
+  }
+  state = latest; currentUser = active.user;
+  authUi.message('Accesso riuscito. Sincronizzo i tuoi dati…');
+  await cloud.initialize({ autoLink: true });
+  if (!await session()) throw new Error(cloud.status.error || 'Accedi di nuovo per aprire il tuo archivio.');
+  state = await Storage.load(); accessGranted = true;
+  authUi.hide(); $('#app-shell').hidden = false;
+  if (cloud.status.phase === 'conflict') location.hash = 'backup';
+  render(); setStatus();
+}
 function setStatus() {
   const badge = $('#connection');
   const phase = cloud.status.phase;
   const syncLabels = { syncing: 'Sincronizzazione…', synced: 'Sincronizzato', pending: 'Modifiche in attesa', conflict: 'Valori da verificare', error: 'Sincronizzazione interrotta' };
-  badge.textContent = syncLabels[phase] || (pwaStatus === 'offline-ready' ? 'Disponibile offline' : 'Dati sul dispositivo');
-  badge.classList.toggle('offline', ['pending', 'conflict', 'error'].includes(phase) || pwaStatus === 'online-only');
+  badge.textContent = !navigator.onLine ? 'Offline · invio in attesa' : syncLabels[phase] || 'Online · collegamento account';
+  badge.classList.toggle('offline', !navigator.onLine || ['pending', 'conflict', 'error'].includes(phase));
   const banner = $('#offline-banner'); banner.hidden = navigator.onLine;
   banner.textContent = state?.sync ? 'Sei offline. I saldi restano sul dispositivo e saranno sincronizzati quando l’app torna online.' : 'Sei offline. Puoi continuare a registrare saldi e note su questo dispositivo.';
   $('#saved-state').textContent = state?.updatedAt
@@ -58,16 +91,17 @@ function heading(eyebrow, title, description, action = '') {
   return `<div class="page-heading"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p>${description}</p></div>${action}</div>`;
 }
 function neededNote(summary) {
-  if (!summary.last) return 'Aggiungi un saldo per iniziare.';
-  if (summary.gap === 0) return 'Obiettivo raggiunto con l’ultimo saldo.';
-  if (summary.deadlinePassed) return 'Scadenza superata. Puoi scegliere una nuova data.';
-  return `Su ${summary.months} mesi, incluso ${monthLabel(summary.last.month)}.`;
+  const plan = summary.plan;
+  if (!plan.last) return 'Aggiungi un saldo riferito a oggi o a un mese precedente.';
+  if (plan.missingCents === 0) return 'Obiettivo raggiunto con l’ultimo saldo disponibile.';
+  if (plan.deadlinePassed) return 'Scadenza superata. Puoi scegliere una nuova data.';
+  return `${plan.monthsLeft} versamenti, da ${monthLabel(plan.today.slice(0, 7))}, incluso il mese in corso.`;
 }
 function statsMarkup(summary) {
   return `<div class="metrics">
     <div class="metric"><p class="metric-label">Crescita dall’inizio</p><p class="metric-value ${color(summary.growth)}">${signed(summary.growth)}</p><p class="metric-note">${summary.first ? `Dal ${asof(summary.first.month)} · ${signedRate(summary.growthRate)}` : 'Aggiungi almeno due saldi.'}</p></div>
     <div class="metric"><p class="metric-label">Variazione ultimo mese</p><p class="metric-value ${color(summary.change)}">${signed(summary.change)}</p><p class="metric-note">${summary.change !== null ? `${signedRate(summary.rate)} rispetto al mese precedente` : 'Occorrono due mesi consecutivi.'}</p></div>
-    <div class="metric"><p class="metric-label">Per raggiungere l’obiettivo</p><p class="metric-value">${money(summary.needed)}<span class="subtle"> / mese</span></p><p class="metric-note">${neededNote(summary)}</p></div>
+    <div class="metric"><p class="metric-label">Per raggiungere l’obiettivo</p><p class="metric-value">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p class="metric-note">${neededNote(summary)}</p></div>
   </div>`;
 }
 function goalPanel(summary) {
@@ -75,6 +109,10 @@ function goalPanel(summary) {
     <div class="goal-progress"><span>${summary.gap === null ? 'Il tuo prossimo traguardo' : summary.gap === 0 ? 'Obiettivo raggiunto' : `Mancano ${money(summary.gap)}`}</span><strong>${summary.progress === null ? 'n.d.' : pct(summary.progress)}</strong></div>
     <progress max="100" value="${Math.max(0, Math.min(100, (summary.progress || 0) * 100))}" aria-label="Percentuale dell’obiettivo raggiunta"></progress>
     <p class="goal-note">${deadlineLabel()} · <a href="#obiettivo">Gestisci obiettivo ↗</a></p></div></section>`;
+}
+function savingsPanel(summary) {
+  const plan = summary.plan;
+  return `<section class="panel savings-panel" aria-labelledby="savings-card-title"><p class="panel-label" id="savings-card-title">Da mettere da parte</p><p class="savings-value">${money(plan.monthlyCents)}<span> / mese</span></p><p class="savings-detail">${plan.missingCents === null ? 'Registra un saldo per calcolare il piano.' : plan.missingCents === 0 ? 'Hai già raggiunto l’obiettivo.' : `Mancano <strong>${money(plan.missingCents)}</strong> all’obiettivo.`}</p><p class="savings-detail">${neededNote(summary)}</p><p class="savings-basis">Calcolo al ${dateLabel(plan.today)}${plan.last ? `<br>Saldo di riferimento: ${asof(plan.last.month)}` : ''}. Nessun rendimento ipotizzato.</p></section>`;
 }
 function row(entry, withNotes = false) {
   const delta = Model.deltaFor(state, entry.month);
@@ -135,9 +173,9 @@ function chart(summary) {
   return `<section class="panel chart-panel"><div class="section-top"><div><h2>Come sta andando</h2><p>Il saldo nel tempo, verso il tuo obiettivo.</p></div><label class="sr-only" for="chart-year">Periodo del grafico</label><select id="chart-year" class="filter">${years.map(year => `<option value="${year}" ${chartYear === String(year) ? 'selected' : ''}>${year}</option>`).join('')}<option value="all" ${all ? 'selected' : ''}>Tutto lo storico</option></select></div><div class="chart-wrap">${svg}</div><div class="chart-legend"><span><i class="legend-stroke"></i>Saldo del conto</span><span><i class="legend-stroke target"></i>Obiettivo</span></div></section>`;
 }
 function overview(summary) {
-  const onboarding = summary.recorded.length ? '' : `<section class="notice onboarding"><strong>Inizia con i tuoi dati</strong><p>Su iPhone aggiungi prima l’app alla Home, aprila dall’icona e importa il backup dei saldi. Il file resta su questo dispositivo.</p><button class="button secondary" data-action="import">Importa backup</button></section>`;
+  const onboarding = summary.recorded.length ? '' : `<section class="notice onboarding"><strong>Inizia con i tuoi dati</strong><p>Su iPhone aggiungi prima l’app alla Home, aprila dall’icona e importa il backup dei saldi. I saldi importati si sincronizzano con il tuo account.</p><button class="button secondary" data-action="import">Importa backup</button></section>`;
   return heading('PANORAMICA', 'Tutto sotto controllo.', summary.last ? `Situazione al ${asof(summary.last.month)}.` : 'Registra i tuoi saldi, mese dopo mese.', addButton()) + onboarding +
-    `<div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">Saldo registrato</p><p class="balance-value">${summary.last ? esc((summary.last.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.last ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">Conto personale</span></div></section>${goalPanel(summary)}</div>
+    `<div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">Saldo registrato</p><p class="balance-value">${summary.last ? esc((summary.last.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.last ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">Conto personale</span></div></section>${goalPanel(summary)}${savingsPanel(summary)}</div>
     ${statsMarkup(summary)}${chart(summary)}<section class="panel table-panel"><div class="table-intro"><div><h2>Gli ultimi saldi</h2><p>Un riferimento, all’inizio di ogni mese.</p></div><a class="button plain" href="#saldi">Vedi tutti →</a></div>${summary.recorded.length ? monthlyTable(summary.recorded.slice(-4).reverse()) : '<p class="empty-state">Nessun saldo registrato.</p>'}</section>`;
 }
 function balances() {
@@ -147,9 +185,9 @@ function balances() {
     <p class="record-summary">${entries.filter(entry => entry.balanceCents !== null).length} saldi su 12 per il ${tableYear}.</p><section class="panel table-panel">${monthlyTable(entries, true)}<p class="info-caption">Le variazioni confrontano due inizi mese consecutivi. Un mese vuoto non viene considerato un saldo a zero.</p></section>`;
 }
 function goal(summary) {
-  const text = summary.last ? summary.deadlinePassed ? 'La scadenza è superata rispetto all’ultimo saldo. Puoi aggiornare la data qui accanto.' : summary.gap === 0 ? 'Il saldo ha raggiunto o superato il tuo obiettivo.' : `Per accumulare ${money(summary.gap)} in ${summary.months} mesi, da ${monthLabel(summary.last.month)} al ${deadlineLabel()}.` : 'Aggiungi un saldo per calcolare quanto manca.';
+  const text = neededNote(summary);
   return heading('IL TUO TRAGUARDO', 'Obiettivo', 'Scegli importo e scadenza. Puoi aggiornarli nel tempo.') +
-    `<div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano l’ultimo saldo disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="text" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">AUMENTO MEDIO NECESSARIO</p><p class="big-needed">${money(summary.needed)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Media riferita all’ultimo saldo, incluso il mese di quel saldo. Nessun rendimento futuro viene ipotizzato.</p></section></div>
+    `<div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano l’ultimo saldo disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="text" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">DA RISPARMIARE DA OGGI</p><p class="big-needed">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Calcolo al ${dateLabel(summary.plan.today)}, con un versamento anche nel mese in corso. Nessun rendimento futuro viene ipotizzato.</p></section></div>
     <section class="panel table-panel"><div class="table-intro"><div><h2>Anno per anno</h2><p>Dal primo all’ultimo saldo disponibile nell’anno.</p></div></div>${summary.annual.length ? `<div class="table-scroll"><table><thead><tr><th>Anno</th><th class="amount">Mesi registrati</th><th class="amount">Ultimo saldo</th><th class="amount">Variazione nell’anno</th></tr></thead><tbody>${summary.annual.map(annual => `<tr><td>${annual.year}</td><td class="amount">${annual.count}</td><td class="amount">${money(annual.last)}</td><td class="amount ${color(annual.change)}">${signed(annual.change)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Gli anni appariranno con i primi saldi.</p>'}<p class="info-caption">${summary.up} mesi in crescita · ${summary.down} in decrescita · ${summary.stable} stabili · ${summary.over} saldi pari o superiori all’obiettivo.</p></section>`;
 }
 function cloudMarkup() {
@@ -163,19 +201,24 @@ function cloudMarkup() {
   return `<section id="cloud-panel" class="panel backup-panel wide"><h2>${labels[status.phase] || 'Sincronizzazione'}</h2><p>Account: <strong>${esc(status.email || '—')}</strong></p><p id="cloud-status" role="status">${status.phase === 'ready-to-link' ? 'Conferma per collegare i saldi di questo dispositivo al tuo account personale.' : status.phase === 'pending' ? 'Le modifiche sono salvate sul dispositivo. Saranno inviate quando l’app è aperta e online.' : status.phase === 'synced' ? 'Telefono e computer usano lo stesso archivio dopo l’accesso con questa email.' : status.phase === 'syncing' ? 'Controllo gli aggiornamenti e invio le modifiche salvate.' : ''}</p>${status.syncedAt ? `<p class="local-note">Ultimo controllo: ${esc(new Date(status.syncedAt).toLocaleString('it-IT'))}</p>` : ''}${status.error ? `<p class="form-error" role="alert">${esc(status.error)}</p>` : ''}${conflicts.length ? `<p>Le modifiche indipendenti saranno unite. Scegli quali valori usare solo per questi conflitti:</p><ul class="cloud-conflicts">${conflicts.map(item => `<li><strong>${esc(fieldLabel(item.path))}</strong><div>Questo dispositivo: <span>${esc(valueLabel(item.local, item.path))}</span></div><div>Online: <span>${esc(valueLabel(item.remote, item.path))}</span></div></li>`).join('')}</ul><button class="button secondary" data-action="cloud-export-remote">Esporta copia online</button><button class="button primary" data-action="cloud-keep-local">Usa valori del dispositivo</button><button class="button secondary" data-action="cloud-keep-remote">Usa valori online</button>` : `<button class="button primary" data-action="${status.phase === 'ready-to-link' ? 'cloud-enable' : 'cloud-sync'}" ${status.phase === 'syncing' ? 'disabled' : ''}>${status.phase === 'ready-to-link' ? 'Attiva sincronizzazione' : 'Sincronizza ora'}</button>`}<button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">Il backup JSON resta disponibile anche quando il servizio online non è raggiungibile.</p></section>`;
 }
 function backup(summary) {
-  return heading('I TUOI DATI', 'Backup e dispositivi', 'L’app funziona anche con il computer spento.') +
+  return heading('I TUOI DATI', 'Backup e dispositivi', 'L’app funziona anche con il computer spento.', '<a class="button secondary" href="#account">Account e sicurezza</a>') +
     `<div class="backup-grid">${cloudMarkup()}<section class="panel backup-panel"><h2>Una copia dei tuoi dati</h2><p>Il backup JSON conserva saldi, note e obiettivo. Sono compatibili anche i backup della versione precedente.</p><button class="button primary" data-action="export">Esporta backup</button><button class="button secondary" data-action="import">Importa backup</button><button class="button secondary" data-action="restore">Ripristina ultimo salvataggio</button><p class="local-note">${summary.recorded.length} saldi registrati. L’importazione chiede conferma prima di sostituirli.</p></section>
     <section class="panel backup-panel"><h2>Apri in Excel o Numbers</h2><p>Esporta i mesi registrati con saldo, variazione e note. Per ripristinare l’app usa il backup JSON.</p><button class="button secondary" data-action="csv">Esporta CSV</button></section>
     <section class="panel backup-panel"><h2>Su iPhone, dalla Home</h2><ol><li>Apri il link pubblicato in Safari.</li><li>Tocca Condividi e “Aggiungi alla schermata Home”.</li><li>Apri l’app dall’icona e accedi con la stessa email.</li></ol><p>${isInstalled() ? 'Stai usando l’app dalla schermata Home.' : 'Dopo il primo caricamento completo l’app si prepara per l’uso offline.'}</p><p>Stato: ${pwaStatus === 'offline-ready' ? 'pronta per l’uso offline' : 'apri l’app online per completare la preparazione offline'}.</p></section>
-    <section class="panel backup-panel"><h2>Telefono e computer</h2><p>Con la sincronizzazione attiva, i saldi vengono controllati automaticamente mentre l’app è aperta, dopo il salvataggio e quando torna online. Se due valori sono in conflitto, scegli quale conservare.</p><p>GitHub distribuisce l’app. L’archivio online personale è in Supabase; una copia resta sul dispositivo per l’uso offline.</p>${navigator.storage?.persist ? '<button class="button secondary" data-action="persist-storage">Richiedi conservazione dati</button>' : ''}<p class="local-note">Conserva un backup anche dopo l’attivazione della sincronizzazione.</p></section></div>`;
+    <section class="panel backup-panel"><h2>Telefono e computer</h2><p>Con la sincronizzazione attiva, i saldi vengono controllati automaticamente mentre l’app è aperta, dopo il salvataggio, alla riapertura e circa ogni 3 secondi mentre è visibile. Se due valori sono in conflitto, scegli quale conservare.</p><p>GitHub distribuisce l’app. L’archivio online personale è in Supabase; una copia resta sul dispositivo per l’uso offline.</p>${navigator.storage?.persist ? '<button class="button secondary" data-action="persist-storage">Richiedi conservazione dati</button>' : ''}<p class="local-note">Conserva un backup anche dopo l’attivazione della sincronizzazione.</p></section></div>`;
+}
+function accountView() {
+  return heading('IL TUO ACCOUNT', 'Account e sicurezza', 'Gestisci l’accesso al tuo spazio personale.') +
+    `<section class="panel form-panel"><h2>Il tuo profilo</h2><p>Nome utente: <strong>${esc(currentUser?.username || '—')}</strong></p><p>Email di recupero: <strong>${esc(currentUser?.email || '')}</strong></p><p>Questa email riceve il link per scegliere una nuova password.</p><button class="button primary" data-action="account-reset">Recupera o cambia password</button><button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">La password non viene salvata dall’app. La sessione di accesso resta sul dispositivo finché non esci.</p></section>`;
 }
 function render() {
+  if (!accessGranted) return;
   const view = route(); $('#breadcrumb').textContent = titles[view];
   document.querySelectorAll('[data-view]').forEach(link => { const active = link.dataset.view === view; link.classList.toggle('active', active); if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
   content.setAttribute('aria-busy', 'false');
   if (!state) return;
-  const summary = Model.stats(state);
-  content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, backup }[view])(summary);
+  const summary = Model.stats(state); summary.plan = Model.goalPlan(state, todayDate()); planDate = summary.plan.today;
+  content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, backup, account: accountView }[view])(summary);
 }
 function nextMonth() {
   const last = Model.stats(state).last;
@@ -227,6 +270,7 @@ document.addEventListener('click', async event => {
       }
     }
     if (action === 'cloud-sync') await cloud.trigger();
+    if (action === 'account-reset') { await requestPasswordRecovery(currentUser.email); toast('Se l’invio è disponibile, riceverai le istruzioni all’email del tuo account.'); }
     if (action === 'cloud-logout') {
       const local = await Storage.load(), pending = local.sync && (!local.sync.base || !samePayload(local, local.sync.base));
       if (await confirmAction('Uscire dall’account?', pending ? 'Ci sono modifiche non ancora inviate. Restano sul dispositivo e riprenderanno la sincronizzazione accedendo allo stesso account.' : 'I dati salvati restano sul dispositivo. La sincronizzazione riprenderà quando accedi allo stesso account.', 'Esci')) { await cloud.logout(); pendingEmail = ''; dirtyForms.clear(); render(); }
@@ -308,6 +352,9 @@ let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTi
 Storage.subscribe(async () => { if (!hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
 onCloudChange(async update => {
   setStatus();
+  if (!authReady) return;
+  if (update.phase === 'signed-out') { lockAccess(); return; }
+  if (!accessGranted) return;
   if (hasPendingUiEdit()) return;
   try {
     if (update.dataChanged) { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); } }
@@ -320,13 +367,18 @@ try {
   if (last) { tableYear = Number(last.month.slice(0, 4)); chartYear = String(tableYear); }
   render(); setStatus();
   initializePwa({ onStatus: status => { pwaStatus = status; setStatus(); if (route() === 'backup' && !hasPendingUiEdit()) render(); }, onUpdate: activate => { activateUpdate = activate; $('#update-banner').hidden = false; } });
+  let recovering = false, accessError = '';
   try {
     const incoming = await incomingAccess;
     if (incoming.error) throw incoming.error;
-    if (incoming.session && await confirmAction('Conferma accesso', `Accedere come ${incoming.session.user.email}? L’archivio locale verrà collegato solo con l’attivazione della sincronizzazione.`, 'Accedi')) await acceptRedirectSession(incoming.session);
-  } catch (error) { toast(error.message, true); }
-  initializeCloud().catch(error => toast(error.message, true));
+    if (incoming.session?.recovery) { recovering = true; authUi.recovery(incoming.session); }
+    else if (incoming.session && await confirmAction('Conferma accesso', `Accedere come ${incoming.session.user.email}? L’archivio locale verrà collegato solo con l’attivazione della sincronizzazione.`, 'Accedi')) await acceptRedirectSession(incoming.session);
+  } catch (error) { accessError = error.message; }
+  await initializeCloud(); authReady = true;
+  if (!recovering && await session()) await openAuthenticatedArchive();
+  else { lockAccess(); if (accessError) authUi.message(accessError, true); }
 } catch (error) {
+  lockAccess(); authUi.message(error.message + ' I dati locali non sono stati sostituiti.', true);
   content.setAttribute('aria-busy', 'false'); content.replaceChildren();
   const panel = document.createElement('section'); panel.className = 'notice';
   const message = document.createElement('p'); message.textContent = `Non posso aprire l’archivio: ${error.message} I dati esistenti non sono stati sostituiti.`;

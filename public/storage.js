@@ -97,17 +97,18 @@ async function updateCurrent(transform, expectedRevision) {
   const db = await open();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, 'readwrite'), store = transaction.objectStore(STORE), request = store.get('current');
-    let result, failure;
+    let result, failure, notifyChange = false;
     request.onsuccess = () => {
       try {
         const current = document(request.result || emptyState());
         if (expectedRevision !== undefined && current.revision !== expectedRevision) throw new ConflictError(current);
         result = transform(current);
+        notifyChange = !samePayload(current, result) || !sameIdentity(current.sync, result.sync);
         if (!samePayload(current, result)) store.put(current, 'previous');
         store.put(result, 'current');
       } catch (error) { failure = error; transaction.abort(); }
     };
-    transaction.oncomplete = () => { channel?.postMessage('changed'); resolve(result); };
+    transaction.oncomplete = () => { if (notifyChange) channel?.postMessage('changed'); resolve(result); };
     transaction.onabort = transaction.onerror = () => reject(failure || transaction.error || new Error('Aggiornamento dell’archivio non riuscito.'));
   });
 }

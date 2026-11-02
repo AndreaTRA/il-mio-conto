@@ -10,6 +10,16 @@ function harness(fetcher) {
   return { client, meta, requests };
 }
 const tokenResponse = (token = 'access-one') => ({ access_token: token, refresh_token: 'refresh-one', expires_in: 3600, user });
+test('the browser fetch function retains its native global receiver', async () => {
+  const original=globalThis.fetch;
+  try {
+    globalThis.fetch=function(){ assert.equal(this,globalThis); return Promise.resolve(Response.json(tokenResponse())); };
+    const meta=new Map();
+    const client=new CloudClient(config,{readMeta:async k=>meta.get(k),writeMeta:async(k,v)=>meta.set(k,v)});
+    await client.signIn('owner','test-password');
+    assert.equal((await client.session()).user.id,user.id);
+  } finally {globalThis.fetch=original;}
+});
 test('only HTTPS Supabase public configuration is accepted', () => {
   assert.equal(validateCloudConfig({ url: '', publishableKey: '' }), null);
   assert.equal(validateCloudConfig(config).url, config.url);
@@ -79,6 +89,38 @@ test('expired or unrelated redirect fragments never create a session', async () 
   const app = harness(async () => { throw Error('must not fetch'); });
   assert.equal(await app.client.sessionFromRedirect('#backup'), null);
   await assert.rejects(() => app.client.sessionFromRedirect('#error=access_denied&error_description=expired'));
-  await assert.rejects(() => app.client.sessionFromRedirect('#access_token=a&refresh_token=b&type=recovery'));
+  await assert.rejects(() => app.client.sessionFromRedirect('#access_token=a&refresh_token=b&type=unrelated'));
   assert.equal(app.requests.length, 0);
+});
+test('password sign-in uses the server alias resolver and never stores the password', async () => {
+  const app = harness(async () => Response.json({ ...tokenResponse(), user: { ...user, app_metadata: { login_username: 'test-owner' } } }));
+  await app.client.signIn('test-owner', 'private-test-password');
+  assert.equal(app.requests[0].url, config.url + '/functions/v1/password-login');
+  assert.equal(JSON.parse(app.requests[0].options.body).identifier, 'test-owner');
+  assert.equal((await app.client.session()).user.username, 'test-owner');
+  assert.ok(!JSON.stringify([...app.meta]).includes('private-test-password'));
+});
+test('a failed password attempt never overwrites an existing session', async () => {
+  const app = harness(async () => Response.json({error:'Invalid credentials'}, {status:401}));
+  const original = {projectUrl:config.url,user,accessToken:'existing'};
+  app.meta.set(app.client.sessionKey, original);
+  await assert.rejects(() => app.client.signIn('unknown','incorrect-password'));
+  assert.deepEqual(await app.client.session(), original);
+});
+test('recovery email requests contain no password and do not change the session', async () => {
+  const app = harness(async () => Response.json({ok:true}));
+  await app.client.requestPasswordRecovery('test-owner');
+  assert.deepEqual(JSON.parse(app.requests[0].options.body), {action:'recover',identifier:'test-owner'});
+  assert.equal(await app.client.session(), undefined);
+});
+test('a recovery link opens only a pending recovery session and cannot sign in directly', async () => {
+  const app = harness(async () => Response.json(tokenResponse()));
+  const candidate = await app.client.verifyRecoveryLink(config.url + '/auth/v1/verify?token=' + 'a'.repeat(64) + '&type=recovery');
+  assert.equal(candidate.recovery,true);
+  assert.equal(await app.client.session(), undefined);
+  await assert.rejects(() => app.client.acceptRedirectSession(candidate));
+  await app.client.resetPassword(candidate,'a-new-test-password');
+  assert.equal(app.requests[1].options.method,'PUT');
+  assert.equal(app.requests[1].options.headers.Authorization,'Bearer access-one');
+  assert.ok(!JSON.stringify([...app.meta]).includes('a-new-test-password'));
 });

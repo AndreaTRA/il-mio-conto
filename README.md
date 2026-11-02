@@ -1,4 +1,4 @@
-# Il mio conto
+# Flowly
 
 [Apri l’app](https://andreatra.github.io/il-mio-conto/) · [Repository GitHub](https://github.com/AndreaTRA/il-mio-conto)
 
@@ -77,10 +77,10 @@ I test coprono anni oltre il 2030, date e importi, saldi a zero, mesi mancanti, 
 
 Il saldo è una fotografia del conto al primo giorno del mese, prima dei movimenti del giorno. Un mese vuoto non vale zero. La variazione mensile richiede due mesi consecutivi; un denominatore nullo o negativo produce `n.d.` nella percentuale. I riepiloghi annuali confrontano il primo e l’ultimo saldo disponibile nell’anno.
 
-La media necessaria per raggiungere l’obiettivo è riferita alla data dell’ultimo saldo, include il suo mese e non ipotizza rendimenti futuri. Una scadenza superata non impedisce di registrare nuovi mesi. Il calendario gestisce gli anni da 1 a 9999, senza un orizzonte finanziario prefissato.
+La quota mensile per raggiungere l’obiettivo è calcolata dalla data odierna e dall’ultimo saldo già disponibile, include un versamento nel mese in corso e non ipotizza rendimenti futuri. I saldi riferiti a mesi futuri non contano come denaro già disponibile. Una scadenza superata non impedisce di registrare nuovi mesi. Il calendario gestisce gli anni da 1 a 9999, senza un orizzonte finanziario prefissato.
 
 I dati del browser possono andare persi cancellando l’archivio del sito o reinstallando l’app. Conserva un backup prima di cambiare telefono o indirizzo del sito. Safari e l’app aggiunta alla Home possono avere archivi separati: importa i dati aprendo l’app dall’icona Home.
 
-La sincronizzazione richiede lo stesso account Supabase sui dispositivi. I dati online sono riservati all’utente tramite RLS; non sono cifrati end-to-end. I controlli avvengono a salvataggio, riapertura, ritorno online e ogni 20 secondi mentre l’app è visibile. Non richiede che il Mac resti acceso.
+La sincronizzazione richiede lo stesso account Supabase sui dispositivi. I dati online sono riservati all’utente tramite RLS; non sono cifrati end-to-end. I controlli avvengono a salvataggio, riapertura, ritorno online e ogni 3 secondi mentre l’app è visibile. Non richiede che il Mac resti acceso.
 
 Il sito non si collega alla banca. I nuovi saldi si inseriscono manualmente.

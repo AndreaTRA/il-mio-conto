@@ -1,0 +1,9 @@
+.overview-grid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr)}
+.savings-panel{padding:27px;min-height:240px;background:linear-gradient(140deg,#222642,#1c1926);border-color:#424d78;display:flex;flex-direction:column}
+.savings-panel .panel-label{color:var(--indigo)}
+.savings-value{font-size:clamp(24px,2.2vw,33px);line-height:1.4;font-weight:600;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:13px 0;overflow-wrap:anywhere}
+.savings-value span{font-size:12px;letter-spacing:0;white-space:nowrap;color:var(--muted)}
+.savings-detail{font-size:12px;line-height:1.7;color:var(--muted);margin-bottom:8px}.savings-detail strong{color:var(--ink);font-weight:600}
+.savings-basis{font-size:10px;line-height:1.8;color:var(--muted);margin-top:auto;padding-top:13px;border-top:1px solid var(--line)}
+@media(max-width:1250px) and (min-width:801px){.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-grid .balance-panel{grid-column:1/-1}}
+@media(max-width:800px){.overview-grid{grid-template-columns:1fr}.savings-panel{padding:24px;min-height:220px}.savings-value{font-size:32px}}

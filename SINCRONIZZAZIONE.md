@@ -1,5 +1,7 @@
 # Attivare telefono e computer sullo stesso archivio
 
+**Accesso aggiornato:** l’app ora mostra una pagina di login con username e password prima della dashboard. Le credenziali sono consegnate in un file privato separato. Vedi [ACCESSO.md](ACCESSO.md) per primo accesso, conferma email e recupero password. La funzione server `password-login` è già distribuita nel progetto attuale.
+
 Il progetto Supabase **il-mio-conto** è stato creato nell’organizzazione **AndreaTRA's Money**, nella regione europea di Francoforte. Lo schema è applicato e `public/cloud-config.js` contiene già URL e chiave pubblicabile. Le prove reali di isolamento utenti, blocco degli accessi anonimi e controllo versione sono passate. L’app è pubblicata su [GitHub Pages](https://andreatra.github.io/il-mio-conto/). Per il primo utilizzo aprila dalla Home dell’iPhone, importa il backup e accedi con la tua email. La prova completa tra i tuoi due dispositivi richiede questo accesso personale. Il Mac può restare spento: GitHub distribuisce l’app e Supabase conserva l’archivio online. Nessun saldo personale è stato inviato online. Gli utenti e i dati fittizi delle prove sono stati annullati con rollback.
 
 [Apri il progetto Supabase](https://supabase.com/dashboard/project/wasdrzcxzlgdqqcjsnup)
@@ -44,22 +46,22 @@ Nel progetto consegnato questi valori sono già compilati. Se li cambi, esegui i
 
 1. Apri l’app pubblicata. Su iPhone aggiungila alla Home da Safari e poi aprila dall’icona.
 2. In **Backup e dispositivi**, importa il file personale `saldi-iniziali-da-importare.json` se i tuoi dati non sono già presenti. Verifica che ci siano i 10 saldi da gennaio a ottobre 2026.
-3. Nella stessa pagina inserisci la tua email e scegli **Invia email di accesso**. Su iPhone dalla Home, tieni premuto il link nell’email, copialo senza aprirlo e incollalo nel campo **Link ricevuto via email** dell’app; premi **Accedi con il link**. La verifica avviene solo con il tuo progetto Supabase. Sul computer puoi anche aprire il link, se hai impostato il Site URL, e confermare l’email mostrata. Se il modello email contiene un codice numerico, puoi usare il campo del codice. Non incollare link o codici di accesso in chat.
-4. Premi **Attiva sincronizzazione**. La conferma indica l’account e l’invio dell’archivio a Supabase: questo è il passaggio che collega e carica i tuoi dati.
+3. Accedi dalla pagina iniziale con username e password del file privato. Prima del primo accesso conferma l’email di attivazione ricevuta da Supabase. In **Dispositivi** puoi poi importare il backup e collegarlo all’account. Non copiare password o link privati nel codice o in chat.
+4. L’accesso collega automaticamente i dati del dispositivo al tuo account Supabase. I mesi presenti solo su uno dei dispositivi vengono uniti; valori incompatibili richiedono una scelta.
 5. Attendi **Sincronizzato**. Se esiste già un archivio online, le modifiche compatibili vengono unite; eventuali valori diversi richiedono una scelta.
 
 Non caricare il backup personale su GitHub. Un semplice accesso con email non invia automaticamente un archivio locale ancora scollegato.
 
 ## 4. Secondo dispositivo
 
-Apri lo stesso indirizzo sul computer o sul secondo dispositivo, entra con **la stessa email** e attiva la sincronizzazione. Un archivio locale nuovo e vuoto scarica i saldi già presenti online. Non serve reimportare il vecchio backup.
+Apri lo stesso indirizzo sul computer o sul secondo dispositivo, entra con **lo stesso username e la stessa password** e ritrova automaticamente l’archivio online. Un archivio locale nuovo e vuoto scarica i saldi già presenti online. Non serve reimportare il vecchio backup.
 
-La sessione resta sul dispositivo. Se scade, l’app prova a rinnovarla; se serve, richiede nuovamente l’accesso email. Uscire dall’account conserva i saldi locali e le modifiche ancora da inviare. Per riprendere usa lo stesso account.
+La sessione resta sul dispositivo. Se scade, l’app prova a rinnovarla; se serve, torna al login con username e password. Uscire dall’account conserva i saldi locali e le modifiche ancora da inviare. Per riprendere usa lo stesso account.
 
 ## Come si comporta ogni giorno
 
 - Il salvataggio locale funziona anche offline. Le modifiche vengono inviate quando l’app è aperta e torna online.
-- Online il controllo parte dopo un salvataggio, alla riapertura o al ritorno in primo piano, e circa ogni 20 secondi mentre l’app è visibile. Puoi usare anche **Sincronizza ora**.
+- Online il controllo parte dopo un salvataggio, alla riapertura o al ritorno in primo piano, e circa ogni 3 secondi mentre l’app è visibile. Puoi usare anche **Sincronizza ora**.
 - Non è necessario lasciare accesi Mac o iPhone. La copia online rimane disponibile; un dispositivo chiuso invierà le sue modifiche locali alla successiva apertura online. Non è prevista esecuzione continua in background.
 - Modifiche a mesi diversi, o alla nota e all’importo dello stesso mese, vengono unite quando compatibili. Se entrambi cambiano lo stesso valore, la pagina mostra i valori in conflitto: **Usa valori del dispositivo** o **Usa valori online** risolve i soli conflitti, mantenendo le altre modifiche compatibili.
 - Prima di risolvere puoi esportare la copia online; il precedente salvataggio locale resta recuperabile. Se nel frattempo cambiano i dati, l’app richiede di riesaminare il conflitto.
@@ -75,7 +77,7 @@ L’archivio locale è associato all’account e al progetto scelti all’attiva
 4. Per provare il conflitto, modifica lo stesso importo sui due dispositivi mentre uno è offline. Ricollegalo e verifica la richiesta di scelta. Elimina poi il mese di prova e attendi la sincronizzazione.
 5. Esporta un backup aggiornato e conservalo fuori dal repository.
 
-I 37 test automatici simulano due dispositivi, rete, autenticazione e link email. Sul progetto reale sono già stati verificati schema, RLS, isolamento tra utenti, controllo versione, validazione delle date e rifiuto di letture/scritture anonime. Le prove hanno lasciato zero archivi e zero utenti fittizi. La prova completa con il tuo accesso e due dispositivi resta da fare dopo la pubblicazione; non è stata inviata alcuna email di accesso dall’assistente.
+I test automatici simulano due dispositivi, rete, autenticazione e link email. Sul progetto reale sono già stati verificati schema, RLS, isolamento tra utenti, controllo versione, validazione delle date e rifiuto di letture/scritture anonime. Le prove hanno lasciato zero archivi e zero utenti fittizi. La prova completa con il tuo accesso e due dispositivi resta da fare dopo la pubblicazione; non è stata inviata alcuna email di accesso dall’assistente.
 
 ## Dati e disponibilità
 

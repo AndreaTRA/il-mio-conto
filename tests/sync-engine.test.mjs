@@ -125,3 +125,18 @@ test('logout during an upload does not re-enable the signed-out session', async 
   assert.equal(app.engine.status.phase, 'signed-out');
   assert.equal((await app.store.load()).entries.length, 2);
 });
+
+test('automatic linking after login merges existing local snapshots and pulls them on a second device',async()=>{
+ const server=new Server(),phone=device(server,put(emptyState(),'2035-01',123456)),mac=device(server);
+ await phone.engine.initialize({autoLink:true});assert.equal(phone.engine.status.phase,'synced');
+ await mac.engine.initialize({autoLink:true});assert.equal(mac.engine.status.phase,'synced');
+ assert.equal((await mac.store.load()).entries[0].balanceCents,123456);
+ mac.store.edit('2035-02',234567);await mac.engine.trigger();await phone.engine.trigger();
+ assert.ok(samePayload(await phone.store.load(),await mac.store.load()));
+});
+test('idle sync checks do not request a financial rerender',async()=>{
+ const server=new Server(),app=device(server,put(emptyState(),'2035-01',100));
+ await app.engine.initialize({autoLink:true});
+ const notifications=[];app.engine.onChange=state=>notifications.push(state);
+ await app.engine.trigger();assert.ok(notifications.every(state=>!state.dataChanged));
+});

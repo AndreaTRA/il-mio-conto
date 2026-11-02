@@ -23,10 +23,20 @@ export function takeRedirectSession() {
   return client.sessionFromRedirect(fragment);
 }
 export const session = () => client.session();
+export const signIn = (identifier, password) => client.signIn(identifier, password);
+export const requestPasswordRecovery = identifier => client.requestPasswordRecovery(identifier);
+export const verifyRecoveryLink = link => client.verifyRecoveryLink(link);
+export const resetPassword = (candidate, password) => client.resetPassword(candidate, password);
 export async function initializeCloud() {
   if (configurationError) { cloud.emit({ phase: 'not-configured', error: configurationError.message }); return; }
   await cloud.initialize();
   window.addEventListener('online', () => cloud.trigger());
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cloud.trigger(); });
-  setInterval(() => { if (document.visibilityState === 'visible') cloud.trigger(); }, 20000);
+  let retryAfter = 0;
+  setInterval(() => {
+    if (document.visibilityState !== 'visible' || !navigator.onLine || ['signed-out', 'not-configured', 'ready-to-link'].includes(cloud.status.phase)) return;
+    if (Date.now() < retryAfter) return;
+    retryAfter = Date.now() + (cloud.status.phase === 'error' ? 15000 : 3000);
+    cloud.trigger();
+  }, 3000);
 }

@@ -14,18 +14,18 @@ export class SyncEngine {
     const session = await this.client.session();
     return session ? { projectUrl: this.client.config.url, userId: session.user.id, email: session.user.email } : null;
   }
-  async initialize() {
+  async initialize({ autoLink = false } = {}) {
     if (!this.client.configured) return this.emit({ phase: 'not-configured' });
     const identity = await this.identity();
     if (!identity) return this.emit({ phase: 'signed-out', email: null });
     const local = await this.store.load();
-    if (!local.sync) return this.emit({ phase: 'ready-to-link', email: identity.email });
+    if (!local.sync) return autoLink ? this.activate() : this.emit({ phase: 'ready-to-link', email: identity.email });
     if (!sameIdentity(local.sync, identity)) return this.emit({ phase: 'error', email: identity.email, error: 'Questo archivio è associato a un altro account. Accedi con l’account originale.' });
     await this.trigger();
   }
   async activate() {
     const identity = await this.identity();
-    if (!identity) throw new Error('Accedi prima con il codice ricevuto via email.');
+    if (!identity) throw new Error('Accedi prima con il tuo account.');
     await this.store.bindCloud(identity); this.emit({ phase: 'pending', email: identity.email, error: '', conflict: null });
     return this.trigger();
   }
@@ -50,6 +50,7 @@ export class SyncEngine {
     if (!sameIdentity(current.sync, identity)) throw new Error('L’account aperto non corrisponde all’archivio del dispositivo.');
     if (!this.online()) return this.emit({ phase: 'pending', email: identity.email, error: '' });
     this.emit({ phase: 'syncing', email: identity.email, error: '', conflict: null });
+    let dataChanged = false;
     for (let attempt = 0; attempt < 4; attempt++) {
       current = await this.store.load();
       if (!sameIdentity(current.sync, identity)) throw new Error('Il collegamento dell’account è cambiato.');
@@ -70,7 +71,7 @@ export class SyncEngine {
       try { staged = await this.store.stageCloud(merge.payload, current.revision, identity, remote); }
       catch (error) { if (error.current) continue; throw error; }
       if (!active()) return;
-      this.onChange({ ...this.status, dataChanged: true });
+      if (!samePayload(staged, current)) { dataChanged = true; this.onChange({ ...this.status, dataChanged: true }); }
       if (samePayload(staged, onlinePayload) && remote.version > 0) {
         await this.store.acknowledgeCloud(identity, remote.version, onlinePayload);
       } else {
@@ -82,7 +83,7 @@ export class SyncEngine {
       }
       const latest = await this.store.load();
       if (!active()) return;
-      if (samePayload(latest, latest.sync.base)) return this.emit({ phase: 'synced', error: '', conflict: null, syncedAt: latest.sync.syncedAt, dataChanged: true });
+      if (samePayload(latest, latest.sync.base)) return this.emit({ phase: 'synced', error: '', conflict: null, syncedAt: latest.sync.syncedAt, dataChanged });
       resolution = null;
     }
     this.emit({ phase: 'pending', error: '', conflict: null });

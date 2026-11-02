@@ -18,22 +18,22 @@ export function validateCloudConfig(config) {
   return { url: url.origin, publishableKey: key };
 }
 export class CloudClient {
-  constructor(config, { readMeta, writeMeta, fetcher = globalThis.fetch, now = () => Date.now(), lock = null }) {
+  constructor(config, { readMeta, writeMeta, fetcher = (...args) => globalThis.fetch(...args), now = () => Date.now(), lock = null }) {
     this.config = validateCloudConfig(config); this.readMeta = readMeta; this.writeMeta = writeMeta; this.fetcher = fetcher; this.now = now; this.lock = lock;
     this.sessionKey = this.config ? 'auth-session:' + this.config.url : ''; this.refreshing = null;
   }
   get configured() { return Boolean(this.config); }
   async session() { return this.config ? this.readMeta(this.sessionKey) : null; }
-  async request(path, { method = 'GET', body, auth = false, userId, retried = false } = {}) {
+  async request(path, { method = 'GET', body, auth = false, userId, retried = false, bearer = null } = {}) {
     if (!this.config) throw new Error('Il collegamento a Supabase non è ancora configurato.');
-    const token = auth ? await this.accessToken(userId) : null;
+    const token = bearer || (auth ? await this.accessToken(userId) : null);
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 10000);
     let response;
     try {
       response = await this.fetcher(this.config.url + path, { method, signal: controller.signal, cache: 'no-store', credentials: 'omit',
         headers: { apikey: this.config.publishableKey, 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-    } catch { throw new Error('Servizio online non raggiungibile. Le modifiche restano sul dispositivo.'); }
+    } catch { throw new Error(path.startsWith('/functions/v1/password-login') ? 'Servizio di accesso non raggiungibile. Controlla la connessione e riprova.' : 'Servizio online non raggiungibile. Le modifiche restano sul dispositivo.'); }
     finally { clearTimeout(timer); }
     if (response.status === 401 && auth && !retried) {
       await this.accessToken(userId, true); return this.request(path, { method, body, auth, userId, retried: true });
@@ -43,11 +43,37 @@ export class CloudClient {
     if (!response.ok) {
     if ([401, 403].includes(response.status) && auth) throw new AuthenticationError();
       if (response.status === 429) throw new Error('Troppi tentativi. Attendi prima di riprovare.');
+      if (path.startsWith('/functions/v1/password-login')) throw new Error(response.status >= 500 ? 'Servizio di accesso temporaneamente non disponibile. Riprova.' : data?.code === 'email_not_confirmed' ? 'Conferma prima l’indirizzo con l’email ricevuta da Supabase.' : 'Nome utente o password non validi.');
       if (path.startsWith('/auth/')) throw new Error(path.includes('/verify') ? 'Codice non valido o scaduto. Richiedine uno nuovo.' : 'Accesso non riuscito. Controlla email e configurazione del servizio.');
       if ([400, 404].includes(response.status)) throw new Error('Configurazione online incompleta. Verifica lo schema Supabase della guida.');
       throw new Error('Sincronizzazione non riuscita. I dati locali sono conservati.');
     }
     return data;
+  }
+  async signIn(identifier, password) {
+    identifier = String(identifier).trim();
+    if (!identifier || identifier.length > 254 || !password || password.length > 128) throw new Error('Inserisci nome utente e password.');
+    const data = await this.request('/functions/v1/password-login', { method: 'POST', body: { action: 'login', identifier, password } });
+    return this.saveVerifiedSession(data);
+  }
+  async requestPasswordRecovery(identifier) {
+    identifier = String(identifier).trim();
+    if (!identifier || identifier.length > 254) throw new Error('Inserisci il nome utente o l’email dell’account.');
+    await this.request('/functions/v1/password-login', { method: 'POST', body: { action: 'recover', identifier } });
+  }
+  async verifyRecoveryLink(link) {
+    let url;
+    try { url = new URL(String(link).trim()); } catch { throw new Error('Incolla il link completo di recupero ricevuto via email.'); }
+    if (url.origin !== this.config?.url || url.pathname !== '/auth/v1/verify' || url.username || url.password || url.hash || url.searchParams.getAll('token').length !== 1 || !/^[A-Za-z0-9_-]{20,200}$/.test(url.searchParams.get('token') || '') || url.searchParams.get('type') !== 'recovery') throw new Error('Usa il link di recupero password di questo progetto.');
+    const data = await this.request('/auth/v1/verify', { method: 'POST', body: { token_hash: url.searchParams.get('token'), type: 'recovery' } });
+    return { ...this.normalizeSession(data), recovery: true };
+  }
+  async resetPassword(candidate, password) {
+    if (!candidate?.recovery || candidate.projectUrl !== this.config?.url || !candidate.accessToken) throw new Error('Apri prima un link di recupero valido.');
+    if (password.length < 12 || password.length > 128) throw new Error('Usa una password tra 12 e 128 caratteri.');
+    await this.request('/auth/v1/user', { method: 'PUT', bearer: candidate.accessToken, body: { password } });
+    try { await this.request('/auth/v1/logout?scope=local', { method: 'POST', bearer: candidate.accessToken }); } catch { /* Password was already changed. */ }
+    await this.forgetSession();
   }
   async sendCode(email, redirectTo = null) {
     email = String(email).trim().toLowerCase();
@@ -65,7 +91,7 @@ export class CloudClient {
     if (!data?.access_token || !data.refresh_token || !user?.id || !user?.email) throw new AuthenticationError('Il servizio non ha restituito un accesso valido.');
     return { accessToken: data.access_token, refreshToken: data.refresh_token,
       expiresAt: data.expires_at ? Number(data.expires_at) * 1000 : this.now() + Number(data.expires_in || 3600) * 1000,
-      user: { id: user.id, email: user.email }, projectUrl: this.config.url };
+      user: { id: user.id, email: user.email, username: user.app_metadata?.login_username || previous?.user?.username || '' }, projectUrl: this.config.url };
   }
   async verifyCode(email, code) {
     if (!/^\d{6,10}$/.test(String(code).trim())) throw new Error('Inserisci il codice numerico ricevuto via email.');
@@ -85,14 +111,15 @@ export class CloudClient {
     const params = new URLSearchParams(fragment.replace(/^#/, ''));
     if (params.has('error') || params.has('error_description')) throw new Error('Il link di accesso non è più valido. Richiedi una nuova email.');
     if (!params.has('access_token') && !params.has('refresh_token')) return null;
-    if (params.has('type') && !['signup', 'magiclink', 'email'].includes(params.get('type'))) throw new Error('Usa il link dell’email di accesso, non quello di recupero password.');
+    if (params.has('type') && !['signup', 'magiclink', 'email', 'recovery'].includes(params.get('type'))) throw new Error('Link di accesso non riconosciuto.');
     if (params.getAll('refresh_token').length !== 1 || !params.get('refresh_token') || !params.get('access_token')) throw new Error('Link di accesso incompleto. Richiedi una nuova email.');
     // Exchange the refresh token with Auth, rather than trusting URL claims.
     const data = await this.request('/auth/v1/token?grant_type=refresh_token', { method: 'POST', body: { refresh_token: params.get('refresh_token') } });
-    return this.normalizeSession(data);
+    return { ...this.normalizeSession(data), ...(params.get('type') === 'recovery' ? { recovery: true } : {}) };
   }
   async acceptRedirectSession(session) {
     if (!session || session.projectUrl !== this.config.url) throw new Error('Accesso non valido per questo progetto.');
+    if (session.recovery) throw new Error('Completa prima il recupero password.');
     await this.writeMeta(this.sessionKey, session);
   }
   async accessToken(expectedUser, force = false) {
