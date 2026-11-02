@@ -1,5 +1,7 @@
 # Pubblicare l’app con GitHub Pages
 
+**Progetto attuale già pubblicato:** [apri l’app](https://andreatra.github.io/il-mio-conto/) · [repository](https://github.com/AndreaTRA/il-mio-conto). Repository, workflow e Pages sono già configurati: per il primo utilizzo parti dal punto 4. I punti 1–3 servono solo per ricreare la pubblicazione.
+
 La versione pubblicata funziona dal telefono anche a Mac spento. Dopo il primo caricamento completo e la preparazione offline può aprirsi senza connessione. GitHub ospita il programma; saldi e note sono conservati nel browser e, dopo l’attivazione, nel tuo archivio personale Supabase.
 
 Il progetto Supabase è già stato creato e `public/cloud-config.js` è compilato. Segui [SINCRONIZZAZIONE.md](SINCRONIZZAZIONE.md) per il primo accesso tramite link email e per impostare il Site URL dopo la pubblicazione. Nessun saldo personale è contenuto nel codice.

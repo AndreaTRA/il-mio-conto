@@ -1,6 +1,6 @@
 # Attivare telefono e computer sullo stesso archivio
 
-Il progetto Supabase **il-mio-conto** è stato creato nell’organizzazione **AndreaTRA's Money**, nella regione europea di Francoforte. Lo schema è applicato e `public/cloud-config.js` contiene già URL e chiave pubblicabile. Le prove reali di isolamento utenti, blocco degli accessi anonimi e controllo versione sono passate. Per usare l’app manca la pubblicazione su GitHub Pages e il tuo primo accesso. Il Mac può restare spento: GitHub distribuisce l’app e Supabase conserva l’archivio online. Nessun saldo personale è stato inviato online. Gli utenti e i dati fittizi delle prove sono stati annullati con rollback.
+Il progetto Supabase **il-mio-conto** è stato creato nell’organizzazione **AndreaTRA's Money**, nella regione europea di Francoforte. Lo schema è applicato e `public/cloud-config.js` contiene già URL e chiave pubblicabile. Le prove reali di isolamento utenti, blocco degli accessi anonimi e controllo versione sono passate. L’app è pubblicata su [GitHub Pages](https://andreatra.github.io/il-mio-conto/). Per il primo utilizzo aprila dalla Home dell’iPhone, importa il backup e accedi con la tua email. La prova completa tra i tuoi due dispositivi richiede questo accesso personale. Il Mac può restare spento: GitHub distribuisce l’app e Supabase conserva l’archivio online. Nessun saldo personale è stato inviato online. Gli utenti e i dati fittizi delle prove sono stati annullati con rollback.
 
 [Apri il progetto Supabase](https://supabase.com/dashboard/project/wasdrzcxzlgdqqcjsnup)
 

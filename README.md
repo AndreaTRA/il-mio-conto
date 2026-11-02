@@ -1,5 +1,7 @@
 # Il mio conto
 
+[Apri l’app](https://andreatra.github.io/il-mio-conto/) · [Repository GitHub](https://github.com/AndreaTRA/il-mio-conto)
+
 Web app personale installabile sulla Home dell’iPhone, con archivio sul dispositivo e funzionamento offline dopo il primo caricamento completo. Il computer può restare spento. GitHub Pages distribuisce i file dell’app; Supabase gestisce l’accesso personale e la sincronizzazione quando configurato.
 
 ## Funzioni
@@ -13,7 +15,7 @@ Web app personale installabile sulla Home dell’iPhone, con archivio sul dispos
 - Pubblicazione statica su GitHub Pages, senza processi sul Mac.
 - Sincronizzazione Supabase tramite link o codice email, con salvataggio offline, unione delle modifiche indipendenti e risoluzione esplicita dei conflitti.
 
-Ogni dispositivo mantiene una copia locale. Dopo la configurazione e l’attivazione sul proprio account, le copie si aggiornano automaticamente mentre l’app è aperta e online. Il progetto Supabase personale è stato creato a Francoforte e il collegamento pubblico è già configurato. Database e autorizzazioni sono stati verificati con dati fittizi, poi annullati. Nessun saldo personale è stato caricato: manca la pubblicazione GitHub e il primo accesso dell’utente.
+Ogni dispositivo mantiene una copia locale. Dopo la configurazione e l’attivazione sul proprio account, le copie si aggiornano automaticamente mentre l’app è aperta e online. Il progetto Supabase personale è stato creato a Francoforte e il collegamento pubblico è già configurato. Database e autorizzazioni sono stati verificati con dati fittizi, poi annullati. Nessun saldo personale è stato caricato: GitHub Pages è attivo e la prima pubblicazione è riuscita. Resta da effettuare il primo accesso personale e importare il backup dall’app.
 
 ## Pubblicazione e primo utilizzo
 

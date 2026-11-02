@@ -8,7 +8,7 @@ export async function initializePwa({ onStatus, onUpdate }) {
     const registration = await navigator.serviceWorker.register('./service-worker.js', { scope: './', updateViaCache: 'none' });
     let reloadRequested = false;
     const offerUpdate = () => {
-      if (registration.waiting) onUpdate(() => { reloadRequested = true; registration.waiting.postMessage({ type: 'ACTIVATE_UPDATE' }); });
+      if (registration.waiting && navigator.serviceWorker.controller) onUpdate(() => { reloadRequested = true; registration.waiting?.postMessage({ type: 'ACTIVATE_UPDATE' }); });
     };
     offerUpdate();
     registration.addEventListener('updatefound', () => {
