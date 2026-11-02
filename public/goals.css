@@ -32,3 +32,10 @@
  .savings-panel{min-height:220px}.savings-value{font-size:32px}
 }
 @media(max-width:390px){.summary-grid .balance-panel,.summary-grid .goal-panel{padding:22px}}
+/* Three distinct statistics share the same columns as the summary above. */
+.summary-grid .metrics:has(.metric:nth-child(3)) .metric:last-child{grid-column:1/-1}
+@media(min-width:1200px){
+ .summary-grid:has(.metric:nth-child(3)){grid-template-areas:"balance goal savings" "metrics metrics metrics"}
+ .summary-grid .metrics:has(.metric:nth-child(3)){grid-template-columns:repeat(3,minmax(0,1fr))}
+ .summary-grid .metrics:has(.metric:nth-child(3)) .metric:last-child{grid-column:auto}
+}
