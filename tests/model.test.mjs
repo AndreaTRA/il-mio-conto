@@ -121,3 +121,42 @@ test('a future snapshot is not counted as a current balance', () => {
  assert.equal(M.goalPlan(state,'2026-11-02').missingCents,3_000_000);
  assert.throws(()=>M.goalPlan(state,'2026-02-30'));
 });
+
+test('monthly reminders start on day one and remain overdue after day five', () => {
+ const state=add(M.emptyState(),'2026-10',10000);
+ assert.deepEqual(M.balanceReminders(state,'2026-11-01'),[{month:'2026-11',dueDate:'2026-11-05',overdue:false}]);
+ assert.equal(M.balanceReminders(state,'2026-11-05')[0].overdue,false);
+ assert.equal(M.balanceReminders(state,'2026-11-06')[0].overdue,true);
+ assert.equal(M.balanceReminders(state,'2026-11-30')[0].month,'2026-11');
+});
+test('unfilled reminders survive month and year changes until their balance is recorded', () => {
+ let state=add(M.emptyState(),'2026-10',10000);
+ assert.deepEqual(M.balanceReminders(state,'2026-12-01').map(r=>r.month),['2026-12','2026-11']);
+ state=add(state,'2026-12',20000);
+ assert.deepEqual(M.balanceReminders(state,'2027-01-01').map(r=>r.month),['2027-01','2026-11']);
+ state=add(state,'2026-11',0);
+ assert.deepEqual(M.balanceReminders(state,'2027-01-01').map(r=>r.month),['2027-01']);
+});
+test('zero satisfies a reminder, a note alone does not and deleting a balance reopens it', () => {
+ let state=add(M.emptyState(),'2035-03',null,'da aggiornare');
+ assert.equal(M.balanceReminders(state,'2035-03-02').length,1);
+ state=add(state,'2035-03',0);
+ assert.equal(M.balanceReminders(state,'2035-03-02').length,0);
+ state=add(state,'2035-03',null,'da aggiornare');
+ assert.equal(M.balanceReminders(state,'2035-03-20').length,1);
+});
+test('reminders work for an empty archive and ignore future months', () => {
+ assert.deepEqual(M.balanceReminders(M.emptyState(),'2045-01-01').map(r=>r.month),['2045-01']);
+ const state=add(add(M.emptyState(),'2045-01',10),'2045-03',30);
+ assert.equal(M.balanceReminders(state,'2045-01-05').length,0);
+ assert.deepEqual(M.balanceReminders(state,'2045-02-06').map(r=>r.month),['2045-02']);
+ assert.throws(()=>M.balanceReminders(state,'2045-02-30'));
+});
+test('monthly average uses elapsed calendar months instead of number of observations', () => {
+ let state=add(add(M.emptyState(),'2026-01',10000),'2026-04',40000);
+ assert.equal(M.stats(state).averageMonthlyChange,10000);assert.equal(M.stats(state).elapsedMonths,3);
+ state=add(state,'2026-04',0);
+ assert.equal(M.stats(state).averageMonthlyChange,-3333);
+ assert.equal(M.stats(add(M.emptyState(),'2026-01',10000)).averageMonthlyChange,null);
+ assert.equal(M.stats(add(add(M.emptyState(),'2026-01',10000),'2026-03',10000)).averageMonthlyChange,0);
+});

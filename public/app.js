@@ -29,13 +29,15 @@ const todayDate = () => {
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
 const dateLabel = date => new Date(date + 'T12:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-const titles = { panoramica: 'Panoramica', saldi: 'Saldi mensili', obiettivo: 'Obiettivo', backup: 'Backup e dispositivi', account: 'Account e sicurezza' };
+const titles = { panoramica: 'Panoramica', saldi: 'Saldi mensili', obiettivo: 'Obiettivo', notifiche: 'Notifiche', backup: 'Backup e dispositivi', account: 'Account e sicurezza' };
 const route = () => Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : 'panoramica';
 let state, tableYear = new Date().getFullYear(), chartYear = String(tableYear), toastTimer;
 let pwaStatus = 'preparing', activateUpdate;
 let pendingEmail = '';
 let accessGranted = false, authReady = false, currentUser = null;
 let planDate = '';
+let notificationPage = 0;
+let pendingArchiveRefresh = false;
 const authUi = createAuthUi({ root: $('#auth-root'), signIn, recover: requestPasswordRecovery, verifyLink: verifyRecoveryLink, resetPassword, onAuthenticated: openAuthenticatedArchive });
 authUi.show('loading');
 const dirtyForms = new Set();
@@ -101,18 +103,18 @@ function statsMarkup(summary) {
   return `<div class="metrics">
     <div class="metric"><p class="metric-label">Crescita dall’inizio</p><p class="metric-value ${color(summary.growth)}">${signed(summary.growth)}</p><p class="metric-note">${summary.first ? `Dal ${asof(summary.first.month)} · ${signedRate(summary.growthRate)}` : 'Aggiungi almeno due saldi.'}</p></div>
     <div class="metric"><p class="metric-label">Variazione ultimo mese</p><p class="metric-value ${color(summary.change)}">${signed(summary.change)}</p><p class="metric-note">${summary.change !== null ? `${signedRate(summary.rate)} rispetto al mese precedente` : 'Occorrono due mesi consecutivi.'}</p></div>
-    <div class="metric"><p class="metric-label">Per raggiungere l’obiettivo</p><p class="metric-value">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p class="metric-note">${neededNote(summary)}</p></div>
+    <div class="metric"><p class="metric-label">Variazione media mensile</p><p class="metric-value ${color(summary.averageMonthlyChange)}">${signed(summary.averageMonthlyChange)}<span class="subtle"> / mese</span></p><p class="metric-note">${summary.elapsedMonths ? `Dal ${asof(summary.first.month)} al ${asof(summary.last.month)}, su ${summary.elapsedMonths} mesi.` : 'Aggiungi almeno due saldi per calcolare la media.'}</p></div>
   </div>`;
 }
 function goalPanel(summary) {
-  return `<section class="panel goal-panel" aria-labelledby="goal-card-title"><div class="goal-top"><p class="panel-label" id="goal-card-title">Obiettivo al ${state.settings.deadline.slice(0, 4)}</p><p class="goal-number">${money(state.settings.targetCents)}</p></div><div>
-    <div class="goal-progress"><span>${summary.gap === null ? 'Il tuo prossimo traguardo' : summary.gap === 0 ? 'Obiettivo raggiunto' : `Mancano ${money(summary.gap)}`}</span><strong>${summary.progress === null ? 'n.d.' : pct(summary.progress)}</strong></div>
+  return `<section class="panel goal-panel" aria-labelledby="goal-card-title"><div class="goal-top"><p class="panel-label" id="goal-card-title">Obiettivo al ${state.settings.deadline.slice(0, 4)}</p><p class="goal-remaining">${summary.gap === null ? '<span>Da calcolare</span>Inserisci un saldo' : summary.gap === 0 ? 'Obiettivo raggiunto' : `<span>Mancano</span>${money(summary.gap)}`}</p><p class="goal-target">Obiettivo: <strong>${money(state.settings.targetCents)}</strong></p></div><div>
+    <div class="goal-progress"><span>Quota raggiunta</span><strong>${summary.progress === null ? 'n.d.' : pct(summary.progress)}</strong></div>
     <progress max="100" value="${Math.max(0, Math.min(100, (summary.progress || 0) * 100))}" aria-label="Percentuale dell’obiettivo raggiunta"></progress>
     <p class="goal-note">${deadlineLabel()} · <a href="#obiettivo">Gestisci obiettivo ↗</a></p></div></section>`;
 }
 function savingsPanel(summary) {
   const plan = summary.plan;
-  return `<section class="panel savings-panel" aria-labelledby="savings-card-title"><p class="panel-label" id="savings-card-title">Da mettere da parte</p><p class="savings-value">${money(plan.monthlyCents)}<span> / mese</span></p><p class="savings-detail">${plan.missingCents === null ? 'Registra un saldo per calcolare il piano.' : plan.missingCents === 0 ? 'Hai già raggiunto l’obiettivo.' : `Mancano <strong>${money(plan.missingCents)}</strong> all’obiettivo.`}</p><p class="savings-detail">${neededNote(summary)}</p><p class="savings-basis">Calcolo al ${dateLabel(plan.today)}${plan.last ? `<br>Saldo di riferimento: ${asof(plan.last.month)}` : ''}. Nessun rendimento ipotizzato.</p></section>`;
+  return `<section class="panel savings-panel" aria-labelledby="savings-card-title"><p class="panel-label" id="savings-card-title">Da mettere da parte</p><p class="savings-value">${money(plan.monthlyCents)}<span> / mese</span></p><p class="savings-detail">${neededNote(summary)}</p><p class="savings-basis">Calcolo al ${dateLabel(plan.today)}${plan.last ? `<br>Saldo di riferimento: ${asof(plan.last.month)}` : ''}. Nessun rendimento ipotizzato.</p></section>`;
 }
 function row(entry, withNotes = false) {
   const delta = Model.deltaFor(state, entry.month);
@@ -175,8 +177,8 @@ function chart(summary) {
 function overview(summary) {
   const onboarding = summary.recorded.length ? '' : `<section class="notice onboarding"><strong>Inizia con i tuoi dati</strong><p>Su iPhone aggiungi prima l’app alla Home, aprila dall’icona e importa il backup dei saldi. I saldi importati si sincronizzano con il tuo account.</p><button class="button secondary" data-action="import">Importa backup</button></section>`;
   return heading('PANORAMICA', 'Tutto sotto controllo.', summary.last ? `Situazione al ${asof(summary.last.month)}.` : 'Registra i tuoi saldi, mese dopo mese.', addButton()) + onboarding +
-    `<div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">Saldo registrato</p><p class="balance-value">${summary.last ? esc((summary.last.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.last ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">Conto personale</span></div></section>${goalPanel(summary)}${savingsPanel(summary)}</div>
-    ${statsMarkup(summary)}${chart(summary)}<section class="panel table-panel"><div class="table-intro"><div><h2>Gli ultimi saldi</h2><p>Un riferimento, all’inizio di ogni mese.</p></div><a class="button plain" href="#saldi">Vedi tutti →</a></div>${summary.recorded.length ? monthlyTable(summary.recorded.slice(-4).reverse()) : '<p class="empty-state">Nessun saldo registrato.</p>'}</section>`;
+    `<div class="summary-grid"><div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">Saldo registrato</p><p class="balance-value">${summary.last ? esc((summary.last.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.last ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">Conto personale</span></div></section>${goalPanel(summary)}${savingsPanel(summary)}</div>
+    ${statsMarkup(summary)}</div>${chart(summary)}<section class="panel table-panel"><div class="table-intro"><div><h2>Gli ultimi saldi</h2><p>Un riferimento, all’inizio di ogni mese.</p></div><a class="button plain" href="#saldi">Vedi tutti →</a></div>${summary.recorded.length ? monthlyTable(summary.recorded.slice(-4).reverse()) : '<p class="empty-state">Nessun saldo registrato.</p>'}</section>`;
 }
 function balances() {
   const entries = Model.monthsForYear(tableYear).map(month => Model.entryFor(state, month));
@@ -211,6 +213,13 @@ function accountView() {
   return heading('IL TUO ACCOUNT', 'Account e sicurezza', 'Gestisci l’accesso al tuo spazio personale.') +
     `<section class="panel form-panel"><h2>Il tuo profilo</h2><p>Nome utente: <strong>${esc(currentUser?.username || '—')}</strong></p><p>Email di recupero: <strong>${esc(currentUser?.email || '')}</strong></p><p>Questa email riceve il link per scegliere una nuova password.</p><button class="button primary" data-action="account-reset">Recupera o cambia password</button><button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">La password non viene salvata dall’app. La sessione di accesso resta sul dispositivo finché non esci.</p></section>`;
 }
+function notificationsView(summary) {
+  const reminders = summary.reminders, pageSize = 12;
+  notificationPage = Math.min(notificationPage, Math.max(0, Math.ceil(reminders.length / pageSize) - 1));
+  const visible = reminders.slice(notificationPage * pageSize, (notificationPage + 1) * pageSize);
+  return heading('PROMEMORIA', 'Notifiche', 'Dal giorno 1 di ogni mese, ti ricordo il saldo da inserire entro il 5. Il promemoria resta attivo finché lo salvi.') +
+    (reminders.length ? `<p class="record-summary" role="status">${reminders.length} ${reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}. Si aggiornano automaticamente anche dagli altri dispositivi.</p><div class="notification-list">${visible.map(item => `<section class="panel notification-card"><div><span class="notification-status ${item.overdue ? 'overdue' : ''}">${item.overdue ? 'In ritardo' : 'Da compilare entro il 5'}</span><h2>Saldo di ${esc(monthLabel(item.month))}</h2><p>Inserisci il saldo al ${asof(item.month)}, prima dei movimenti di quel giorno. Questo promemoria rimane finché non registri il saldo.</p></div><button class="button primary" data-edit="${item.month}">Inserisci saldo<span class="sr-only"> ${esc(monthLabel(item.month))}</span></button></section>`).join('')}</div>${reminders.length > pageSize ? `<div class="notification-pages"><button class="button secondary" data-notification-page="-1" ${notificationPage === 0 ? 'disabled' : ''}>Più recenti</button><span>Pagina ${notificationPage + 1} di ${Math.ceil(reminders.length / pageSize)}</span><button class="button secondary" data-notification-page="1" ${(notificationPage + 1) * pageSize >= reminders.length ? 'disabled' : ''}>Precedenti</button></div>` : ''}` : '<section class="panel notification-empty"><h2>Tutto aggiornato</h2><p>Non ci sono saldi da inserire. Il prossimo promemoria comparirà all’inizio del mese successivo, se il relativo saldo manca.</p></section>');
+}
 function render() {
   if (!accessGranted) return;
   const view = route(); $('#breadcrumb').textContent = titles[view];
@@ -218,7 +227,11 @@ function render() {
   content.setAttribute('aria-busy', 'false');
   if (!state) return;
   const summary = Model.stats(state); summary.plan = Model.goalPlan(state, todayDate()); planDate = summary.plan.today;
-  content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, backup, account: accountView }[view])(summary);
+  summary.reminders = Model.balanceReminders(state, planDate);
+  const badge = $('#notification-count'), notificationLink = $('[data-view="notifiche"]');
+  badge.hidden = summary.reminders.length === 0; badge.textContent = summary.reminders.length > 99 ? '99+' : summary.reminders.length;
+  notificationLink.setAttribute('aria-label', `Notifiche: ${summary.reminders.length} ${summary.reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}`);
+  content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, notifiche: notificationsView, backup, account: accountView }[view])(summary);
 }
 function nextMonth() {
   const last = Model.stats(state).last;
@@ -254,6 +267,7 @@ document.addEventListener('click', async event => {
   const close = event.target.closest('[data-close]'); if (close) { close.closest('dialog').close(); return; }
   const edit = event.target.closest('[data-edit]'); if (edit) { openEntry(edit.dataset.edit); return; }
   const step = event.target.closest('[data-year-step]'); if (step) { tableYear += Number(step.dataset.yearStep); render(); return; }
+  const notificationStep = event.target.closest('[data-notification-page]'); if (notificationStep) { notificationPage = Math.max(0, notificationPage + Number(notificationStep.dataset.notificationPage)); render(); return; }
   const action = event.target.closest('[data-action]')?.dataset.action;
   try {
     if (action === 'add') openEntry(nextMonth());
@@ -355,9 +369,9 @@ onCloudChange(async update => {
   if (!authReady) return;
   if (update.phase === 'signed-out') { lockAccess(); return; }
   if (!accessGranted) return;
-  if (hasPendingUiEdit()) return;
+  if (hasPendingUiEdit()) { if (update.dataChanged) pendingArchiveRefresh = true; return; }
   try {
-    if (update.dataChanged) { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); } }
+    if (update.dataChanged || pendingArchiveRefresh) { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; pendingArchiveRefresh = false; render(); } else pendingArchiveRefresh = true; }
     else if (route() === 'backup') { const panel = $('#cloud-panel'); if (panel) panel.outerHTML = cloudMarkup(); }
   } catch (error) { toast(error.message, true); }
 });

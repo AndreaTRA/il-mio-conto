@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Flowly">
   <meta name="description" content="Saldi mensili, crescita e obiettivi. Una web app personale che funziona anche offline.">
   <title>Flowly · Il tuo bilancio personale</title><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="icon-180.png"><link rel="manifest" href="manifest.webmanifest"><link rel="preload" href="manrope-400.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="app.css">
-  <link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="goals.css"><script src="app.js" type="module"></script>
+  <link rel="stylesheet" href="auth.css"><link rel="stylesheet" href="goals.css"><link rel="stylesheet" href="notifications.css"><script src="app.js" type="module"></script>
 </head>
 <body>
   <div id="update-banner" class="notice" hidden><span>È disponibile un aggiornamento dell’app.</span> <button id="apply-update" class="button secondary" type="button">Aggiorna app</button></div>
@@ -20,6 +20,7 @@
         <a href="#panoramica" data-view="panoramica"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10 12 3l9 7v10H3zM9 20v-7h6v7"/></svg><span>Panoramica</span></a>
         <a href="#saldi" data-view="saldi"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4m8-4v4M4 11h16m-11 4h1m4 0h1m-6 3h1"/></svg><span>Saldi mensili</span></a>
         <a href="#obiettivo" data-view="obiettivo"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/></svg><span>Obiettivo</span></a>
+        <a href="#notifiche" data-view="notifiche"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span>Notifiche</span><span id="notification-count" class="notification-badge" aria-hidden="true" hidden></span></a>
         <a href="#backup" data-view="backup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="13" height="12" rx="2"/><path d="M7 20h5m-2-4v4"/><rect x="16" y="10" width="5" height="11" rx="1"/></svg><span class="desktop-label">Backup e dispositivi</span><span class="mobile-label">Dispositivi</span></a>
       </nav>
       <div class="sidebar-bottom"><span class="privacy-dot"></span><div><strong>Il tuo spazio personale</strong><p>Dati su questo dispositivo</p></div></div>

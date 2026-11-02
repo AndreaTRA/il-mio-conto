@@ -99,6 +99,21 @@ export function goalPlan(state, today) {
     monthlyCents: missingCents === null ? null : missingCents === 0 ? 0 : monthsLeft ? Math.ceil(missingCents / monthsLeft) : null,
     deadlinePassed: today > state.settings.deadline && missingCents !== null && missingCents > 0 };
 }
+/** Active reminders persist after the fifth until the balance is registered.
+ * Recorded zero counts as complete; notes without a balance do not. */
+export function balanceReminders(state, today) {
+  if (!isDate(today)) throw new Error('La data del promemoria non è valida.');
+  const current = today.slice(0, 7);
+  const existing = new Set(state.entries.filter(entry => entry.balanceCents !== null).map(entry => entry.month));
+  const start = state.entries.map(entry => entry.month).filter(month => month <= current).sort()[0] || current;
+  const reminders = [];
+  const count = monthIndex(current) - monthIndex(start);
+  for (let offset = count; offset >= 0; offset--) {
+    const month = shiftMonth(start, offset);
+    if (!existing.has(month)) reminders.push({ month, dueDate: month + '-05', overdue: today > month + '-05' });
+  }
+  return reminders;
+}
 export function stats(state) {
   const recorded = state.entries.filter(entry => entry.balanceCents !== null).sort((a, b) => a.month.localeCompare(b.month));
   const byMonth = new Map(recorded.map(entry => [entry.month, entry]));
@@ -110,6 +125,7 @@ export function stats(state) {
   const change = last ? deltaFor(state, last.month) : null;
   const previous = last && monthIndex(last.month) > 12 ? entryFor(state, shiftMonth(last.month, -1)) : null;
   const growth = recorded.length > 1 ? last.balanceCents - first.balanceCents : null;
+  const elapsedMonths = recorded.length > 1 ? monthIndex(last.month) - monthIndex(first.month) : 0;
   const gap = last ? Math.max(0, state.settings.targetCents - last.balanceCents) : null;
   const months = last ? remainingMonths(last.month, state.settings.deadline) : null;
   const deltas = recorded.map(changeOf).filter(value => value !== null);
@@ -124,6 +140,7 @@ export function stats(state) {
     progress: last ? last.balanceCents / state.settings.targetCents : null,
     rate: change !== null && previous?.balanceCents > 0 ? change / previous.balanceCents : null,
     growth, growthRate: growth !== null && first.balanceCents > 0 ? growth / first.balanceCents : null,
+    averageMonthlyChange: elapsedMonths ? Math.round(growth / elapsedMonths) || 0 : null, elapsedMonths,
     needed: last ? gap === 0 ? 0 : months > 0 ? gap / months : null : null,
     deadlinePassed: Boolean(last && months === 0 && gap > 0),
     up: deltas.filter(value => value > 0).length,

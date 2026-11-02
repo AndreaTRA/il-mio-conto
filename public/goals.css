@@ -1,9 +1,34 @@
-.overview-grid{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr)}
+/* One grid aligns the two account columns with the saving plan beside them. */
+.summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"balance goal savings" "metrics metrics savings";gap:20px;margin-bottom:26px;align-items:stretch}
+.summary-grid .overview-grid{display:contents}
+.summary-grid .balance-panel{grid-area:balance}
+.summary-grid .goal-panel{grid-area:goal}
+.summary-grid .savings-panel{grid-area:savings}
+.summary-grid .metrics{grid-area:metrics;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:0}
+.summary-grid .balance-panel,.summary-grid .goal-panel,.summary-grid .savings-panel{padding:26px}
+.summary-grid .balance-value{font-size:clamp(28px,2.8vw,43px)}
+.summary-grid .metric:last-child{display:block;grid-column:auto}
+.summary-grid .metric:last-child .metric-label{margin-bottom:9px}
+.summary-grid .metric:last-child .metric-value{margin-top:0}
+.summary-grid .metric:last-child .metric-note{margin-top:8px}
 .savings-panel{padding:27px;min-height:240px;background:linear-gradient(140deg,#222642,#1c1926);border-color:#424d78;display:flex;flex-direction:column}
 .savings-panel .panel-label{color:var(--indigo)}
 .savings-value{font-size:clamp(24px,2.2vw,33px);line-height:1.4;font-weight:600;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:13px 0;overflow-wrap:anywhere}
 .savings-value span{font-size:12px;letter-spacing:0;white-space:nowrap;color:var(--muted)}
 .savings-detail{font-size:12px;line-height:1.7;color:var(--muted);margin-bottom:8px}.savings-detail strong{color:var(--ink);font-weight:600}
-.savings-basis{font-size:10px;line-height:1.8;color:var(--muted);margin-top:auto;padding-top:13px;border-top:1px solid var(--line)}
-@media(max-width:1250px) and (min-width:801px){.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-grid .balance-panel{grid-column:1/-1}}
-@media(max-width:800px){.overview-grid{grid-template-columns:1fr}.savings-panel{padding:24px;min-height:220px}.savings-value{font-size:32px}}
+.savings-basis{font-size:11px;line-height:1.8;color:var(--muted);margin-top:auto;padding-top:13px;border-top:1px solid var(--line)}
+@media(max-width:1199px) and (min-width:801px){
+ .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"balance goal" "savings savings" "metrics metrics"}
+ .summary-grid .balance-panel,.summary-grid .goal-panel,.summary-grid .savings-panel{padding:24px}
+ .summary-grid .savings-panel{min-height:0}
+ .savings-basis{margin-top:12px}
+}
+@media(max-width:800px){
+ .summary-grid{display:block;margin-bottom:23px}
+ .summary-grid .overview-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:15px}
+ .summary-grid .balance-panel,.summary-grid .goal-panel,.summary-grid .savings-panel{grid-area:auto;padding:24px}
+ .summary-grid .balance-value{font-size:clamp(29px,8.5vw,47px)}
+ .summary-grid .metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0 0}
+ .savings-panel{min-height:220px}.savings-value{font-size:32px}
+}
+@media(max-width:390px){.summary-grid .balance-panel,.summary-grid .goal-panel{padding:22px}}

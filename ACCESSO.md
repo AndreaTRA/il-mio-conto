@@ -45,6 +45,18 @@ L’Advisor del progetto segnala che il controllo aggiuntivo delle password già
 
 Fonti: [password Auth](https://supabase.com/docs/guides/auth/passwords), [recupero](https://supabase.com/docs/reference/javascript/auth-resetpasswordforemail), [variabili server](https://supabase.com/docs/guides/functions/secrets).
 
+## Home e statistiche
+
+Nella Home l’importo mancante è in evidenza nel riquadro dell’obiettivo; il totale da raggiungere rimane più piccolo. La quota mensile compare una sola volta, nel piano di risparmio. Il dato storico aggiuntivo è la variazione media mensile: differenza tra ultimo e primo saldo divisa per i mesi di calendario trascorsi, anche se ci sono mesi senza rilevazioni.
+
+## Notifiche mensili nell’app
+
+La voce **Notifiche** del menu mostra un contatore dei saldi mancanti. Per ogni mese, dal giorno 1 compare il promemoria di inserire il saldo al primo giorno entro il 5. Dopo il 5 diventa **In ritardo** e resta visibile finché quel mese non ha un saldo. Il passaggio al mese successivo non lo elimina. Lo zero è un saldo valido; una nota senza importo non completa il promemoria.
+
+I promemoria si riferiscono ai mesi dal primo mese presente nello storico fino al mese corrente; per un archivio vuoto si parte dal mese corrente. Non vengono richiesti saldi futuri. Le notifiche sono ricavate dai dati dell’account: salvare su un dispositivo le risolve anche sugli altri dopo la sincronizzazione. Dal promemoria puoi aprire direttamente il modulo del mese interessato.
+
+Questi sono promemoria **dentro l’app**, nella sezione richiesta del menu. Si aggiornano all’apertura, al cambio giorno e dopo i salvataggi. Non viene richiesto il permesso per notifiche push del sistema e non vengono inviate email mensili.
+
 ## Stato connessione e piano di risparmio
 
 La dicitura **Online / Sincronizzato** riguarda la connessione e l’archivio condiviso. La preparazione per l’uso offline indica invece che l’app può aprirsi anche senza rete: non significa che il dispositivo sia disconnesso. Quando l’app è visibile controlla gli aggiornamenti ogni 3 secondi, oltre che dopo i salvataggi e alla riapertura. In caso di errore di rete i tentativi si diradano. I conflitti non sovrascrivono automaticamente valori diversi.
