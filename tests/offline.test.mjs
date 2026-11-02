@@ -11,12 +11,12 @@ async function worker() {
     async open(name) {
       if (!stores.has(name)) stores.set(name, new Map());
       const data = stores.get(name);
-      return { async addAll(urls) { for (const url of urls) data.set(url, new Response('cached:' + url)); }, async match(request, options = {}) { return data.get(key(request, options.ignoreSearch))?.clone(); } };
+      return { async addAll(urls) { for (const request of urls) { const url = key(request); data.set(url, new Response('cached:' + url)); } }, async match(request, options = {}) { return data.get(key(request, options.ignoreSearch))?.clone(); } };
     },
     async keys() { return [...stores.keys()]; }, async delete(name) { return stores.delete(name); }
   };
   const self = { registration: { scope }, addEventListener(name, fn) { handlers.set(name, fn); }, clients: { async claim() { claimed = true; } }, skipWaiting() { skipped = true; } };
-  vm.runInNewContext((await fs.readFile(new URL('../public/service-worker.js', import.meta.url), 'utf8')).replace('__APP_VERSION__', 'test-version'), { self, caches, URL, fetch: async () => { throw new Error('offline'); } });
+  vm.runInNewContext((await fs.readFile(new URL('../public/service-worker.js', import.meta.url), 'utf8')).replace('__APP_VERSION__', 'test-version'), { self, caches, URL, Request, fetch: async () => { throw new Error('offline'); } });
   return { scope, stores, handlers, caches, get claimed() { return claimed; }, get skipped() { return skipped; } };
 }
 test('service worker caches the app at a GitHub project subpath and opens offline', async () => {

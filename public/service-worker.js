@@ -5,7 +5,7 @@ const ASSETS = ['index.html', 'app.css', 'app.js', 'model.js', 'storage.js', 'pw
 ASSETS.push('auth-ui.js', 'auth.css', 'goals.css', 'notifications.css');
 const urls = ASSETS.map(asset => new URL(asset, self.registration.scope).href);
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls)));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls.map(url => new Request(url, { cache: 'reload' })))));
 });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
