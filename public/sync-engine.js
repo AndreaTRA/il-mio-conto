@@ -49,13 +49,14 @@ export class SyncEngine {
     if (!current.sync) return this.emit({ phase: 'ready-to-link', email: identity.email });
     if (!sameIdentity(current.sync, identity)) throw new Error('L’account aperto non corrisponde all’archivio del dispositivo.');
     if (!this.online()) return this.emit({ phase: 'pending', email: identity.email, error: '' });
-    this.emit({ phase: 'syncing', email: identity.email, error: '', conflict: null });
+    if (this.status.phase !== 'synced' || !current.sync.base || !samePayload(current, current.sync.base)) this.emit({ phase: 'syncing', email: identity.email, error: '', conflict: null });
     let dataChanged = false;
     for (let attempt = 0; attempt < 4; attempt++) {
       current = await this.store.load();
       if (!sameIdentity(current.sync, identity)) throw new Error('Il collegamento dell’account è cambiato.');
       const remote = await this.client.readSnapshot(identity.userId);
       if (!active()) return;
+      if (remote.version !== current.sync.remoteVersion && this.status.phase === 'synced') this.emit({ phase: 'syncing', error: '', conflict: null });
       if (remote.payload) remote.payload = validateState(remote.payload);
       if (!remote.payload && current.sync.remoteVersion > 0) throw new Error('L’archivio online non è più disponibile. La copia locale è conservata: verifica il progetto prima di proseguire.');
       const onlinePayload = remote.payload || emptyState();

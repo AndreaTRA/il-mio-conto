@@ -138,5 +138,5 @@ test('idle sync checks do not request a financial rerender',async()=>{
  const server=new Server(),app=device(server,put(emptyState(),'2035-01',100));
  await app.engine.initialize({autoLink:true});
  const notifications=[];app.engine.onChange=state=>notifications.push(state);
- await app.engine.trigger();assert.ok(notifications.every(state=>!state.dataChanged));
+ await app.engine.trigger();assert.ok(notifications.every(state=>!state.dataChanged));assert.ok(notifications.every(state=>state.phase!=='syncing'));
 });
