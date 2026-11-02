@@ -1,0 +1,14 @@
+{
+  "name": "il-mio-conto",
+  "version": "2.2.0",
+  "private": true,
+  "type": "module",
+  "description": "PWA personale per saldi mensili, offline e senza limite al 2030.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/serve.mjs --dist"
+  }
+}

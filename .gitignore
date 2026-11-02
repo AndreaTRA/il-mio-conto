@@ -1,0 +1,14 @@
+node_modules/
+dist/
+work/
+outputs/
+.private/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+*backup*.json
+saldi-iniziali*.json
+playwright-report/
+test-results/

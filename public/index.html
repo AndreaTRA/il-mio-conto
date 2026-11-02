@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#100f17"><meta name="color-scheme" content="dark"><meta name="apple-mobile-web-app-capable" content="yes">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Flowly">
+  <meta name="description" content="Saldi mensili, crescita e obiettivi. Una web app personale che funziona anche offline.">
+  <title>Flowly · Il tuo bilancio personale</title><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="icon-180.png"><link rel="manifest" href="manifest.webmanifest"><link rel="preload" href="manrope-400.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="app.css">
+  <script src="app.js" type="module"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#panoramica" aria-label="Flowly, panoramica"><span class="brand-mark" aria-hidden="true">f</span><span>flowly</span></a>
+      <span class="nav-caption">Il tuo spazio</span>
+      <nav aria-label="Navigazione principale">
+        <a href="#panoramica" data-view="panoramica"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10 12 3l9 7v10H3zM9 20v-7h6v7"/></svg><span>Panoramica</span></a>
+        <a href="#saldi" data-view="saldi"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4m8-4v4M4 11h16m-11 4h1m4 0h1m-6 3h1"/></svg><span>Saldi mensili</span></a>
+        <a href="#obiettivo" data-view="obiettivo"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/></svg><span>Obiettivo</span></a>
+        <a href="#backup" data-view="backup"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="13" height="12" rx="2"/><path d="M7 20h5m-2-4v4"/><rect x="16" y="10" width="5" height="11" rx="1"/></svg><span class="desktop-label">Backup e dispositivi</span><span class="mobile-label">Dispositivi</span></a>
+      </nav>
+      <div class="sidebar-bottom"><span class="privacy-dot"></span><div><strong>Il tuo spazio personale</strong><p>Dati su questo dispositivo</p></div></div>
+    </aside>
+    <main id="main" tabindex="-1">
+      <header class="topbar"><a class="mobile-brand" href="#panoramica" aria-label="Flowly, panoramica"><span class="brand-mark" aria-hidden="true">f</span>flowly</a><div class="breadcrumb">Conto personale <span>/</span> <span id="breadcrumb">Panoramica</span></div><button id="connection" class="connection" type="button">Dati sul dispositivo</button></header>
+      <div id="offline-banner" class="notice" hidden></div>
+      <div id="update-banner" class="notice" hidden><span>È disponibile un aggiornamento dell’app.</span> <button id="apply-update" class="button secondary" type="button">Aggiorna app</button></div>
+      <div id="content" aria-busy="true"><div class="loading">Apro Flowly…</div></div>
+      <footer class="main-footer"><span>Saldi al primo giorno del mese.</span><span id="saved-state">I dati vengono salvati sul dispositivo.</span></footer>
+    </main>
+  </div>
+  <dialog id="entry-dialog" aria-labelledby="entry-title">
+    <form id="entry-form"><div class="dialog-header"><div><p class="eyebrow">SALDO MENSILE</p><h2 id="entry-title">Aggiungi un saldo</h2></div><button class="icon-button" type="button" data-close aria-label="Chiudi">×</button></div>
+      <p class="muted">Il saldo al 1° del mese, prima dei movimenti di quel giorno.</p>
+      <label for="entry-month">Mese</label><input id="entry-month" name="month" type="month" min="0001-01" max="9999-12" required>
+      <label for="entry-amount">Saldo del conto (€)</label><input id="entry-amount" name="amount" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" required aria-describedby="amount-help">
+      <span id="amount-help" class="field-help">Puoi inserire anche un saldo a zero o negativo.</span>
+      <label for="entry-note">Nota <span class="optional">facoltativa</span></label><textarea id="entry-note" name="note" rows="3" maxlength="500" placeholder="Per ricordare cosa è cambiato"></textarea>
+      <p id="entry-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button id="delete-entry" class="button danger-plain" type="button">Elimina saldo</button><span></span><button class="button secondary" type="button" data-close>Annulla</button><button class="button primary" id="save-entry" type="submit">Salva saldo</button></div>
+    </form>
+  </dialog>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><div class="dialog-header"><h2 id="confirm-title">Conferma</h2><button class="icon-button" type="button" data-close aria-label="Chiudi">×</button></div><p id="confirm-text"></p><div class="dialog-actions"><span></span><button class="button secondary" id="confirm-cancel" type="button">Annulla</button><button class="button primary" id="confirm-accept" type="button">Conferma</button></div></dialog>
+  <input type="file" id="import-file" accept="application/json,.json" hidden>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <noscript>Attiva JavaScript nel browser per utilizzare Flowly.</noscript>
+</body>
+</html>
