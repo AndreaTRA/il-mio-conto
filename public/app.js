@@ -240,9 +240,11 @@ async function loadUsers() {
   finally { usersLoading = false; if (accessGranted && route() === 'account') render(); }
 }
 function accountView() {
-  return heading('IL TUO ACCOUNT', 'Account e sicurezza', 'Gestisci l’accesso al tuo spazio personale.') +
-    `<section class="panel form-panel"><h2>Il tuo profilo</h2><p>Nome: <strong>${esc([accountProfile?.first_name,accountProfile?.last_name].filter(Boolean).join(' ') || currentUser?.username || '—')}</strong></p><p>Email di recupero: <strong>${esc(currentUser?.email || '')}</strong></p><p>Questa email riceve il link per scegliere una nuova password.</p><button class="button primary" data-action="account-reset">Recupera o cambia password</button><button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">La password non viene salvata dall’app. La sessione di accesso resta sul dispositivo finché non esci.</p></section>${usersMarkup()}`;
+  const detail = (label, value) => `<div><dt>${label}</dt><dd>${esc(value || 'Non indicato')}</dd></div>`;
+  return heading('IL TUO ACCOUNT', 'Account e sicurezza', 'I tuoi dati personali e le impostazioni di accesso.') +
+    `<section class="panel form-panel"><h2>Il tuo profilo</h2><dl class="profile-details">${detail('Nome', accountProfile?.first_name)}${detail('Cognome', accountProfile?.last_name)}${detail('Email', currentUser?.email)}${detail('Telefono', accountProfile?.phone)}${currentUser?.username ? detail('Nome utente', currentUser.username) : ''}</dl><p>Le istruzioni per recuperare la password vengono inviate alla tua email.</p><button class="button primary" data-action="account-reset">Recupera o cambia password</button><button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">La password non viene salvata dall’app. La sessione di accesso resta sul dispositivo finché non esci.</p></section>${usersMarkup()}`;
 }
+
 function notificationsView(summary) {
   const reminders = summary.reminders, pageSize = 12;
   notificationPage = Math.min(notificationPage, Math.max(0, Math.ceil(reminders.length / pageSize) - 1));
@@ -263,6 +265,8 @@ function setNumbersVisible(visible) {
 function render() {
   if (!accessGranted) return;
   const view = route(); $('#breadcrumb').textContent = titles[view];
+  $('#profile-link').classList.toggle('active', view === 'account');
+  if (view === 'account') $('#profile-link').setAttribute('aria-current', 'page'); else $('#profile-link').removeAttribute('aria-current');
   document.querySelectorAll('[data-view]').forEach(link => { const active = link.dataset.view === view; link.classList.toggle('active', active); if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
   content.setAttribute('aria-busy', 'false');
   if (!state) return;

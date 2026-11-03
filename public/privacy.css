@@ -6,3 +6,9 @@
 .private-chart{min-height:230px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;text-align:center;color:var(--muted);font-size:13px;padding:20px}
 .private-chart p:first-child{font-size:17px;color:var(--ink)}
 @media(max-width:800px){.topbar-actions{gap:7px}.numbers-toggle{width:38px;height:38px;flex-basis:38px;padding:8px}.topbar-actions .connection{max-width:calc(100vw - 180px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+
+.profile-link{display:inline-grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border:1px solid var(--line);border-radius:50%;background:var(--paper);color:var(--muted);text-decoration:none}
+.profile-link svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.profile-link:hover,.profile-link:focus-visible,.profile-link.active{color:var(--ink);border-color:var(--violet-light);background:var(--panel)}
+.profile-details{display:grid;gap:16px;margin:24px 0}.profile-details div{display:grid;gap:5px;min-width:0}.profile-details dt{font-size:12px;color:var(--muted)}.profile-details dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+@media(max-width:800px){.profile-link{width:38px;height:38px;flex-basis:38px}.topbar-actions{flex:1;justify-content:flex-end}.topbar-actions .connection{min-width:0;max-width:calc(100vw - 225px)}}
