@@ -66,6 +66,14 @@ Il riquadro **Da mettere da parte**, accanto all’obiettivo, usa la data odiern
 
 L’occhio nell’intestazione mostra o nasconde importi e percentuali nelle schermate e nello storico. Il grafico rimane nascosto insieme ai numeri. Ogni nuova apertura o ritorno dall’app in secondo piano riparte con i dati nascosti: la scelta di mostrarli non viene salvata. I campi per inserire o modificare un saldo rimangono utilizzabili.
 
+## Modificare il profilo
+
+In «Account e sicurezza» modifica nome, cognome, telefono e nome utente, quindi premi «Salva profilo». Serve una connessione internet; i campi non vengono salvati automaticamente mentre scrivi. Le modifiche vengono rilette sugli altri dispositivi all’apertura della pagina e, se non stai scrivendo, ogni 15 secondi. Puoi sempre accedere anche con l’email.
+
+Per cambiare l’email usa «Nuova email» e «Richiedi cambio email», poi completa le conferme ricevute. Finché il cambio non è confermato, resta valido l’indirizzo precedente. Password e archivio dei saldi rimangono associati allo stesso account.
+
+Per una nuova installazione del backend, eseguire anche `supabase/profile-edit.sql` dopo `supabase/accounts.sql`. La funzione di salvataggio permette di modificare soltanto il profilo del proprio account approvato; non permette di cambiare ruoli o approvazioni.
+
 
 ## Account degli amici e amministrazione
 

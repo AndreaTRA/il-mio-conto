@@ -5,6 +5,7 @@
 .numbers-toggle.revealed .eye-slash{display:none}
 .private-chart{min-height:230px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;text-align:center;color:var(--muted);font-size:13px;padding:20px}
 .private-chart p:first-child{font-size:17px;color:var(--ink)}
+.profile-fields{border:0;padding:0;margin:0;min-width:0}.profile-fields input{width:100%;min-width:0}.account-section{margin-top:22px}.account-actions{display:flex;gap:12px;flex-wrap:wrap}.profile-feedback{color:var(--indigo);font-size:13px;line-height:1.7}.profile-feedback:empty{display:none}
 @media(max-width:800px){.topbar-actions{gap:7px}.numbers-toggle{width:38px;height:38px;flex-basis:38px;padding:8px}.topbar-actions .connection{max-width:calc(100vw - 180px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 
 .profile-link{display:inline-grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border:1px solid var(--line);border-radius:50%;background:var(--paper);color:var(--muted);text-decoration:none}

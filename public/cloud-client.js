@@ -41,6 +41,7 @@ export class CloudClient {
     let data = null;
     try { const text = await response.text(); if (text) data = JSON.parse(text); } catch { throw new Error('Risposta online non leggibile. I dati locali sono conservati.'); }
     if (!response.ok) {
+      if (path === '/rest/v1/rpc/conto_update_profile' && data?.code === '23505') throw new Error('Questo nome utente è già utilizzato. Scegline un altro.');
     if ([401, 403].includes(response.status) && auth) throw new AuthenticationError();
       if (response.status === 429) throw new Error('Troppi tentativi. Attendi prima di riprovare.');
       if (path.startsWith('/functions/v1/password-login')) throw new Error(response.status >= 500 ? 'Servizio di accesso temporaneamente non disponibile. Riprova.' : data?.code === 'email_not_confirmed' ? 'Conferma prima l’indirizzo con l’email ricevuta da Supabase.' : 'Nome utente o password non validi.');
@@ -69,6 +70,20 @@ export class CloudClient {
   }
   async account() {
     return this.request('/rest/v1/rpc/conto_my_account', { method: 'POST', auth: true, body: {} });
+  }
+  async updateProfile({ firstName, lastName, phone, username }) {
+    firstName = String(firstName || '').trim(); lastName = String(lastName || '').trim();
+    phone = String(phone || '').trim(); username = String(username || '').trim().toLowerCase();
+    if (firstName.length > 80 || lastName.length > 80) throw new Error('Nome e cognome: massimo 80 caratteri ciascuno.');
+    if (phone && !/^[+0-9() .-]{6,30}$/.test(phone)) throw new Error('Inserisci un numero di telefono valido.');
+    if (username && !/^[a-z0-9_.-]{3,32}$/.test(username)) throw new Error('Nome utente: da 3 a 32 lettere, numeri, punti, trattini o underscore.');
+    return this.request('/rest/v1/rpc/conto_update_profile', { method: 'POST', auth: true,
+      body: { p_first_name: firstName, p_last_name: lastName, p_phone: phone, p_username: username } });
+  }
+  async changeEmail(email) {
+    email = String(email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error('Inserisci un’email valida.');
+    await this.request('/auth/v1/user?redirect_to=' + encodeURIComponent('https://andreatra.github.io/il-mio-conto/'), { method: 'PUT', auth: true, body: { email } });
   }
   async requireApproved() {
     const profile = await this.account();
@@ -133,7 +148,7 @@ export class CloudClient {
     const params = new URLSearchParams(fragment.replace(/^#/, ''));
     if (params.has('error') || params.has('error_description')) throw new Error('Il link di accesso non è più valido. Richiedi una nuova email.');
     if (!params.has('access_token') && !params.has('refresh_token')) return null;
-    if (params.has('type') && !['signup', 'magiclink', 'email', 'recovery'].includes(params.get('type'))) throw new Error('Link di accesso non riconosciuto.');
+    if (params.has('type') && !['signup', 'magiclink', 'email', 'email_change', 'recovery'].includes(params.get('type'))) throw new Error('Link di accesso non riconosciuto.');
     if (params.getAll('refresh_token').length !== 1 || !params.get('refresh_token') || !params.get('access_token')) throw new Error('Link di accesso incompleto. Richiedi una nuova email.');
     // Exchange the refresh token with Auth, rather than trusting URL claims.
     const data = await this.request('/auth/v1/token?grant_type=refresh_token', { method: 'POST', body: { refresh_token: params.get('refresh_token') } });

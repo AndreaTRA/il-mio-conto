@@ -143,3 +143,37 @@ for (const status of ['pending', 'rejected', 'blocked']) test(`${status} account
   assert.equal(app.requests.length, 1);
   assert.ok(app.requests[0].url.endsWith('/conto_my_account'));
 });
+test('profile edits send only allowed fields for the authenticated account', async () => {
+  const app = harness(async () => Response.json({ first_name: 'Ada', username: 'ada' }));
+  app.meta.set(app.client.sessionKey, { projectUrl: config.url, user, expiresAt: 99999999, accessToken: 'token', refreshToken: 'refresh' });
+  await app.client.updateProfile({ firstName: ' Ada ', lastName: ' Rossi ', phone: '', username: ' ADA ', is_admin: true, user_id: 'someone-else' });
+  assert.equal(app.requests[0].options.headers.Authorization, 'Bearer token');
+  assert.deepEqual(JSON.parse(app.requests[0].options.body), { p_first_name: 'Ada', p_last_name: 'Rossi', p_phone: '', p_username: 'ada' });
+  assert.deepEqual((await app.client.session()).user, user);
+  for (const details of [{ firstName: 'x'.repeat(81) }, { phone: 'not a phone' }, { username: 'not an alias!' }]) await assert.rejects(() => app.client.updateProfile(details));
+  assert.equal(app.requests.length, 1);
+});
+test('duplicate usernames report an actionable error without changing the session', async () => {
+  const app = harness(async () => Response.json({ code: '23505' }, { status: 409 }));
+  app.meta.set(app.client.sessionKey, { projectUrl: config.url, user, expiresAt: 99999999, accessToken: 'token', refreshToken: 'refresh' });
+  await assert.rejects(() => app.client.updateProfile({ username: 'taken' }), /già utilizzato/);
+  assert.deepEqual((await app.client.session()).user, user);
+});
+test('email changes use Auth and keep the current session email until confirmed', async () => {
+  const app = harness(async () => Response.json({ email: user.email, new_email: 'new@example.test' }));
+  app.meta.set(app.client.sessionKey, { projectUrl: config.url, user, expiresAt: 99999999, accessToken: 'token', refreshToken: 'refresh' });
+  await app.client.changeEmail(' NEW@example.test ');
+  assert.equal(app.requests[0].options.method, 'PUT');
+  assert.ok(app.requests[0].url.includes('/auth/v1/user?redirect_to='));
+  assert.deepEqual(JSON.parse(app.requests[0].options.body), { email: 'new@example.test' });
+  assert.equal((await app.client.session()).user.email, user.email);
+  await assert.rejects(() => app.client.changeEmail('invalid'));
+  assert.equal(app.requests.length, 1);
+});
+test('email-change redirects are verified with Auth before acceptance', async () => {
+  const app = harness(async () => Response.json(tokenResponse()));
+  const pending = await app.client.sessionFromRedirect('#access_token=untrusted&refresh_token=verified-by-auth&type=email_change');
+  assert.equal(pending.user.id, user.id);
+  assert.equal(pending.accessToken, 'access-one');
+  assert.equal(await app.client.session(), undefined);
+});

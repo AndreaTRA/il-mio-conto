@@ -44,3 +44,5 @@ export async function initializeCloud({ initialize = true } = {}) {
 export const register = details => client.register(details);
 export const requireApproved = () => client.requireApproved();
 export const manageAccounts = (id, status) => client.manageAccounts(id, status);
+export const updateProfile = details => client.updateProfile(details);
+export const changeEmail = email => client.changeEmail(email);

@@ -1,7 +1,7 @@
 import * as Model from './model.js';
 import * as Storage from './storage.js';
 import { initializePwa, isInstalled } from './pwa.js';
-import { cloud, onCloudChange, initializeCloud, sendCode, verifyCode, verifyEmailLink, takeRedirectSession, acceptRedirectSession, session, signIn, requestPasswordRecovery, verifyRecoveryLink, resetPassword, register, requireApproved, manageAccounts } from './cloud.js';
+import { cloud, onCloudChange, initializeCloud, sendCode, verifyCode, verifyEmailLink, takeRedirectSession, acceptRedirectSession, session, signIn, requestPasswordRecovery, verifyRecoveryLink, resetPassword, register, requireApproved, manageAccounts, updateProfile, changeEmail } from './cloud.js';
 import { samePayload, sameIdentity } from './sync-merge.js';
 import { createAuthUi } from './auth-ui.js';
 
@@ -38,6 +38,7 @@ let pwaStatus = 'preparing', activateUpdate;
 let pendingEmail = '';
 let accessGranted = false, authReady = false, currentUser = null;
 let accountProfile = null, managedUsers = null, usersLoading = false, usersError = '';
+let profileSaving = false, emailSaving = false, profileNotice = '', emailNotice = '', accountRefreshing = false;
 let planDate = '';
 let notificationPage = 0;
 let pendingArchiveRefresh = false;
@@ -71,7 +72,7 @@ async function openAuthenticatedArchive() {
   }
   if (cloud.running) await cloud.running;
   await Storage.selectAccount({ projectUrl: active.projectUrl, userId: active.user.id }, { claimLegacy: accountProfile.is_admin });
-  state = await Storage.load(); currentUser = active.user;
+  state = await Storage.load(); currentUser = { ...active.user, ...(accountProfile.email ? { email: accountProfile.email, username: accountProfile.username } : {}) };
   managedUsers = null; usersError = '';
   authUi.message('Accesso riuscito. Sincronizzo i tuoi dati…');
   await cloud.initialize({ autoLink: true });
@@ -240,10 +241,40 @@ async function loadUsers() {
   finally { usersLoading = false; if (accessGranted && route() === 'account') render(); }
 }
 function accountView() {
-  const detail = (label, value) => `<div><dt>${label}</dt><dd>${esc(value || 'Non indicato')}</dd></div>`;
-  return heading('IL TUO ACCOUNT', 'Account e sicurezza', 'I tuoi dati personali e le impostazioni di accesso.') +
-    `<section class="panel form-panel"><h2>Il tuo profilo</h2><dl class="profile-details">${detail('Nome', accountProfile?.first_name)}${detail('Cognome', accountProfile?.last_name)}${detail('Email', currentUser?.email)}${detail('Telefono', accountProfile?.phone)}${currentUser?.username ? detail('Nome utente', currentUser.username) : ''}</dl><p>Le istruzioni per recuperare la password vengono inviate alla tua email.</p><button class="button primary" data-action="account-reset">Recupera o cambia password</button><button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">La password non viene salvata dall’app. La sessione di accesso resta sul dispositivo finché non esci.</p></section>${usersMarkup()}`;
+  const field = (id, label, value, extra = '') => `<label for="${id}">${label}</label><input id="${id}" value="${esc(value || '')}" ${extra}>`;
+  const email = accountProfile?.email || currentUser?.email || '';
+  return heading('IL TUO ACCOUNT', 'Account e sicurezza', 'Modifica i tuoi dati personali e le impostazioni di accesso.') +
+    `<section class="panel form-panel"><h2>Il tuo profilo</h2><form id="profile-form"><fieldset class="profile-fields" ${profileSaving ? 'disabled' : ''}>
+    ${field('profile-first-name', 'Nome', accountProfile?.first_name, 'autocomplete="given-name" maxlength="80"')}
+    ${field('profile-last-name', 'Cognome', accountProfile?.last_name, 'autocomplete="family-name" maxlength="80"')}
+    ${field('profile-phone', 'Telefono', accountProfile?.phone, 'type="tel" autocomplete="tel" maxlength="30"')}
+    ${field('profile-username', 'Nome utente', accountProfile?.username ?? currentUser?.username, 'autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="32" aria-describedby="username-help"')}
+    <p id="username-help" class="field-help">Facoltativo: 3–32 lettere, numeri, punti o trattini. Puoi sempre accedere anche con l’email.</p>
+    <p id="profile-error" class="form-error" role="alert"></p><p class="profile-feedback" role="status">${esc(profileNotice)}</p>
+    <button class="button primary" type="submit" ${navigator.onLine === false ? 'disabled' : ''}>${profileSaving ? 'Salvataggio…' : 'Salva profilo'}</button></fieldset></form></section>
+    <section class="panel form-panel account-section"><h2>Email di accesso e recupero</h2><p>Email attuale: <strong>${esc(email)}</strong></p>
+    ${accountProfile?.pending_email ? `<p class="notice">Cambio in attesa di conferma: ${esc(accountProfile.pending_email)}. Controlla la posta.</p>` : ''}
+    <form id="profile-email-form"><fieldset class="profile-fields" ${emailSaving ? 'disabled' : ''}>${field('profile-email', 'Nuova email', '', 'type="email" autocomplete="email" maxlength="254" required')}
+    <p class="field-help">Il nuovo indirizzo diventa attivo dopo le conferme richieste via email. I tuoi saldi restano nello stesso account.</p>
+    <p id="profile-email-error" class="form-error" role="alert"></p><p class="profile-feedback" role="status">${esc(emailNotice)}</p>
+    <button class="button secondary" type="submit" ${navigator.onLine === false ? 'disabled' : ''}>${emailSaving ? 'Invio…' : 'Richiedi cambio email'}</button></fieldset></form></section>
+    <section class="panel form-panel account-section"><h2>Accesso e password</h2><p>Le istruzioni per recuperare la password vengono inviate alla tua email.</p><div class="account-actions"><button class="button primary" data-action="account-reset">Recupera o cambia password</button><button class="button secondary" data-action="cloud-logout">Esci dall’account</button></div><p class="local-note">La password non viene salvata dall’app. La sessione di accesso resta sul dispositivo finché non esci.</p></section>${usersMarkup()}`;
 }
+async function acceptProfile(profile) {
+  accountProfile = profile;
+  currentUser = { ...currentUser, username: profile.username, email: profile.email };
+  await Storage.writeMeta('account-access:' + currentUser.id, profile);
+}
+async function refreshProfile() {
+  if (!accessGranted || !navigator.onLine || accountRefreshing || hasPendingUiEdit()) return;
+  const owner = currentUser.id; accountRefreshing = true;
+  try {
+    const profile = await requireApproved();
+    if (accessGranted && currentUser?.id === owner && !hasPendingUiEdit() && JSON.stringify(profile) !== JSON.stringify(accountProfile)) { await acceptProfile(profile); if (route() === 'account') render(); }
+  } catch (error) { if (error.authRequired) { await cloud.logout(); lockAccess(); } }
+  finally { accountRefreshing = false; }
+}
+setInterval(() => { if (document.visibilityState === 'visible' && route() === 'account') refreshProfile(); }, 15000);
 
 function notificationsView(summary) {
   const reminders = summary.reminders, pageSize = 12;
@@ -281,7 +312,11 @@ function render() {
   badge.hidden = summary.reminders.length === 0; badge.textContent = summary.reminders.length > 99 ? '99+' : summary.reminders.length;
   notificationLink.setAttribute('aria-label', `Notifiche: ${summary.reminders.length} ${summary.reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}`);
   if (view === 'account' && accountProfile?.is_admin && managedUsers === null && !usersLoading && !usersError) queueMicrotask(loadUsers);
+  const drafts = [...content.querySelectorAll('#profile-form, #profile-email-form')].filter(form => dirtyForms.has(form.id)).flatMap(form => [...form.querySelectorAll('input')].map(input => [input.id, input.value]));
+  const draftErrors = [...content.querySelectorAll('#profile-error, #profile-email-error')].map(node => [node.id, node.textContent]);
   content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, notifiche: notificationsView, backup, account: accountView }[view])(summary);
+  drafts.forEach(([id, value]) => { const input = document.getElementById(id); if (input) input.value = value; });
+  if (drafts.length) draftErrors.forEach(([id, value]) => { const node = document.getElementById(id); if (node) node.textContent = value; });
 }
 function nextMonth() {
   const last = Model.stats(state).last;
@@ -381,6 +416,37 @@ $('#delete-entry').addEventListener('click', async () => {
   try { await persist(Model.setEntry(state, { month, balanceCents: null, note: '' })); $('#entry-dialog').close(); toast('Saldo eliminato.'); } catch (error) { $('#entry-error').textContent = error.message; }
 });
 content.addEventListener('submit', async event => {
+  if (event.target.id === 'profile-form') {
+    event.preventDefault(); if (profileSaving) return;
+    if (!navigator.onLine) { $('#profile-error').textContent = 'Connettiti a internet per salvare il profilo.'; return; }
+    const details = { firstName: $('#profile-first-name').value, lastName: $('#profile-last-name').value, phone: $('#profile-phone').value, username: $('#profile-username').value };
+    const owner = currentUser.id; profileSaving = true; profileNotice = ''; dirtyForms.add('profile-form'); render();
+    try {
+      const profile = await updateProfile(details);
+      if (!accessGranted || currentUser?.id !== owner) return;
+      await acceptProfile(profile); dirtyForms.delete('profile-form'); managedUsers = null; profileNotice = 'Profilo salvato. Le modifiche sono disponibili anche sugli altri dispositivi.';
+      profileSaving = false; render();
+    } catch (error) { if ($('#profile-error')) $('#profile-error').textContent = error.message; }
+    finally { profileSaving = false; if (accessGranted && route() === 'account') render(); }
+    return;
+  }
+  if (event.target.id === 'profile-email-form') {
+    event.preventDefault(); if (emailSaving) return;
+    const email = $('#profile-email').value.trim().toLowerCase();
+    if (!navigator.onLine) { $('#profile-email-error').textContent = 'Connettiti a internet per cambiare email.'; return; }
+    if (email === (accountProfile?.email || currentUser.email).toLowerCase()) { $('#profile-email-error').textContent = 'Questo è già il tuo indirizzo attuale.'; return; }
+    if (!await confirmAction('Cambiare email?', `Richiedi il cambio dell’indirizzo di accesso e recupero a ${email}. Segui le conferme ricevute via email per completarlo.`, 'Richiedi cambio')) return;
+    const owner = currentUser.id; emailSaving = true; emailNotice = ''; dirtyForms.add('profile-email-form'); render();
+    try {
+      await changeEmail(email);
+      const profile = await requireApproved();
+      if (!accessGranted || currentUser?.id !== owner) return;
+      await acceptProfile(profile); dirtyForms.delete('profile-email-form');
+      emailNotice = profile.email === email ? 'Email aggiornata.' : 'Richiesta inviata. Controlla la posta e completa le conferme richieste.';
+    } catch (error) { if ($('#profile-email-error')) $('#profile-email-error').textContent = error.message; }
+    finally { emailSaving = false; if (accessGranted && route() === 'account') render(); }
+    return;
+  }
   if (event.target.id !== 'goal-form') return;
   event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
   try {
@@ -422,8 +488,8 @@ content.addEventListener('submit', async event => {
   } catch (error) { if ($('#cloud-login-error')) $('#cloud-login-error').textContent = error.message; }
   finally { if (button.isConnected) button.disabled = false; }
 });
-document.addEventListener('input', event => { const id = event.target.closest('form')?.id; if (['goal-form', 'cloud-email-form', 'cloud-code-form', 'cloud-link-form'].includes(id)) dirtyForms.add(id); });
-window.addEventListener('hashchange', () => { dirtyForms.clear(); render(); window.scrollTo({ top: 0, behavior: 'auto' }); });
+document.addEventListener('input', event => { const id = event.target.closest('form')?.id; if (['goal-form', 'cloud-email-form', 'cloud-code-form', 'cloud-link-form', 'profile-form', 'profile-email-form'].includes(id)) dirtyForms.add(id); });
+window.addEventListener('hashchange', () => { dirtyForms.clear(); render(); if (route() === 'account') refreshProfile(); window.scrollTo({ top: 0, behavior: 'auto' }); });
 window.addEventListener('online', setStatus); window.addEventListener('offline', setStatus);
 let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state && route() === 'panoramica' && !document.querySelector('dialog[open]')) render(); }, 150); });
 Storage.subscribe(async () => { if (accessGranted && (await session())?.user.id !== currentUser?.id) { lockAccess(); return; } if (!hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
@@ -438,7 +504,7 @@ onCloudChange(async update => {
     else if (route() === 'backup') { const panel = $('#cloud-panel'); if (panel) panel.outerHTML = cloudMarkup(); }
   } catch (error) { toast(error.message, true); }
 });
-document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'hidden') setNumbersVisible(false); if (state && document.visibilityState === 'visible' && !hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
+document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'hidden') setNumbersVisible(false); if (document.visibilityState === 'visible' && route() === 'account') refreshProfile(); if (state && document.visibilityState === 'visible' && !hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
 try {
   state = await Storage.load(); const last = Model.stats(state).last;
   if (last) { tableYear = Number(last.month.slice(0, 4)); chartYear = String(tableYear); }
