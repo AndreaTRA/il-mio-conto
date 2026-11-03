@@ -41,6 +41,7 @@ let accountProfile = null, managedUsers = null, usersLoading = false, usersError
 let profileSaving = false, emailSaving = false, profileNotice = '', emailNotice = '', accountRefreshing = false;
 let planDate = '';
 let notificationPage = 0;
+const needsGoalSetup = () => Model.requiresGoalSetup(state, accountProfile?.is_admin === true);
 let pendingArchiveRefresh = false;
 const authUi = createAuthUi({ root: $('#auth-root'), signIn, register, recover: requestPasswordRecovery, verifyLink: verifyRecoveryLink, resetPassword, onAuthenticated: openAuthenticatedArchive });
 authUi.show('loading');
@@ -106,6 +107,7 @@ function heading(eyebrow, title, description, action = '') {
 }
 function neededNote(summary) {
   const plan = summary.plan;
+  if (needsGoalSetup()) return 'Imposta importo e scadenza per calcolare il piano.';
   if (!plan.last) return 'Aggiungi un saldo riferito a oggi o a un mese precedente.';
   if (plan.missingCents === 0) return 'Obiettivo raggiunto con l’ultimo saldo disponibile.';
   if (plan.deadlinePassed) return 'Scadenza superata. Puoi scegliere una nuova data.';
@@ -199,7 +201,12 @@ function balances() {
     `<div class="year-control"><button class="button secondary" data-year-step="-1" aria-label="Anno precedente" ${tableYear <= 1 ? 'disabled' : ''}>←</button><div><label for="table-year">Anno</label><input type="number" id="table-year" min="1" max="9999" value="${tableYear}" inputmode="numeric"></div><button class="button secondary" data-year-step="1" aria-label="Anno successivo" ${tableYear >= 9999 ? 'disabled' : ''}>→</button></div>
     <p class="record-summary">${entries.filter(entry => entry.balanceCents !== null).length} saldi su 12 per il ${tableYear}.</p><section class="panel table-panel">${monthlyTable(entries, true)}<p class="info-caption">Le variazioni confrontano due inizi mese consecutivi. Un mese vuoto non viene considerato un saldo a zero.</p></section>`;
 }
+function goalSetup() {
+  return heading('INIZIAMO', 'Scegli il tuo obiettivo', 'Prima di continuare, indica quanto vuoi raggiungere e per quale data.') +
+    `<section class="panel form-panel"><h2>Il tuo traguardo personale</h2><p>Non è stato impostato alcun obiettivo. Importo e scadenza li scegli tu e potrai modificarli in seguito.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="Inserisci l’importo" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva e continua</button></form></section>`;
+}
 function goal(summary) {
+  if (needsGoalSetup()) return goalSetup();
   const text = neededNote(summary);
   return heading('IL TUO TRAGUARDO', 'Obiettivo', 'Scegli importo e scadenza. Puoi aggiornarli nel tempo.') +
     `<div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano l’ultimo saldo disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="${numbersVisible ? 'text' : 'password'}" autocomplete="off" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">DA RISPARMIARE DA OGGI</p><p class="big-needed">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Calcolo al ${dateLabel(summary.plan.today)}, con un versamento anche nel mese in corso. Nessun rendimento futuro viene ipotizzato.</p></section></div>
@@ -211,8 +218,8 @@ function cloudMarkup() {
   if (status.phase === 'signed-out') return `<section id="cloud-panel" class="panel backup-panel wide"><h2>Accesso personale</h2><p>Accedi con la stessa email sui due dispositivi. Supabase invia un link di accesso; se hai configurato il codice email puoi usare anche quello. L’archivio online sarà riservato al tuo utente.</p><form id="cloud-email-form"><label for="cloud-email">Email</label><div class="form-inline"><input id="cloud-email" type="email" autocomplete="username" value="${esc(pendingEmail || status.email || '')}" required><button class="button primary" type="submit">Invia email di accesso</button></div></form>${pendingEmail ? `<form id="cloud-code-form"><label for="cloud-code">Codice numerico, se presente nell’email</label><div class="form-inline"><input id="cloud-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{6,10}" required><button class="button primary" type="submit">Accedi</button></div></form>` : ''}<p>Su iPhone dalla Home: tieni premuto il link nell’email, copialo e incollalo qui senza aprirlo. L’accesso resterà nell’app.</p><form id="cloud-link-form"><label for="cloud-link">Link ricevuto via email</label><input id="cloud-link" type="password" autocomplete="off" spellcheck="false" required><button class="button secondary" type="submit">Accedi con il link</button></form><p id="cloud-login-error" class="form-error" role="alert">${esc(status.error)}</p></section>`;
   const labels = { 'ready-to-link': 'Collega il tuo archivio', syncing: 'Sincronizzazione in corso', synced: 'Archivio sincronizzato', pending: 'Modifiche in attesa', conflict: 'Controlla i valori in conflitto', error: 'Sincronizzazione interrotta' };
   const conflicts = status.conflict?.fields || [];
-  const valueLabel = (value, path) => value === null ? 'Eliminato o vuoto' : path.endsWith('Cents') ? money(value) : typeof value === 'object' ? `${money(value.balanceCents)} · ${value.note || 'Nessuna nota'}` : String(value);
-  const fieldLabel = path => path === 'settings.targetCents' ? 'Importo obiettivo' : path === 'settings.deadline' ? 'Scadenza obiettivo' : `${monthLabel(path.split('.')[1])}${path.endsWith('.note') ? ' · nota' : ' · saldo'}`;
+  const valueLabel = (value, path) => path === 'settings' ? (value?.targetCents === null ? 'Obiettivo da impostare' : `${money(value.targetCents)} · ${value.deadline}`) : value === null ? 'Eliminato o vuoto' : path.endsWith('Cents') ? money(value) : typeof value === 'object' ? `${money(value.balanceCents)} · ${value.note || 'Nessuna nota'}` : String(value);
+  const fieldLabel = path => path === 'settings' ? 'Obiettivo' : path === 'settings.targetCents' ? 'Importo obiettivo' : path === 'settings.deadline' ? 'Scadenza obiettivo' : `${monthLabel(path.split('.')[1])}${path.endsWith('.note') ? ' · nota' : ' · saldo'}`;
   return `<section id="cloud-panel" class="panel backup-panel wide"><h2>${labels[status.phase] || 'Sincronizzazione'}</h2><p>Account: <strong>${esc(status.email || '—')}</strong></p><p id="cloud-status" role="status">${status.phase === 'ready-to-link' ? 'Conferma per collegare i saldi di questo dispositivo al tuo account personale.' : status.phase === 'pending' ? 'Le modifiche sono salvate sul dispositivo. Saranno inviate quando l’app è aperta e online.' : status.phase === 'synced' ? 'Telefono e computer usano lo stesso archivio dopo l’accesso con questa email.' : status.phase === 'syncing' ? 'Controllo gli aggiornamenti e invio le modifiche salvate.' : ''}</p>${status.syncedAt ? `<p class="local-note">Ultimo controllo: ${esc(new Date(status.syncedAt).toLocaleString('it-IT'))}</p>` : ''}${status.error ? `<p class="form-error" role="alert">${esc(status.error)}</p>` : ''}${conflicts.length ? `<p>Le modifiche indipendenti saranno unite. Scegli quali valori usare solo per questi conflitti:</p><ul class="cloud-conflicts">${conflicts.map(item => `<li><strong>${esc(fieldLabel(item.path))}</strong><div>Questo dispositivo: <span>${esc(valueLabel(item.local, item.path))}</span></div><div>Online: <span>${esc(valueLabel(item.remote, item.path))}</span></div></li>`).join('')}</ul><button class="button secondary" data-action="cloud-export-remote">Esporta copia online</button><button class="button primary" data-action="cloud-keep-local">Usa valori del dispositivo</button><button class="button secondary" data-action="cloud-keep-remote">Usa valori online</button>` : `<button class="button primary" data-action="${status.phase === 'ready-to-link' ? 'cloud-enable' : 'cloud-sync'}" ${status.phase === 'syncing' ? 'disabled' : ''}>${status.phase === 'ready-to-link' ? 'Attiva sincronizzazione' : 'Sincronizza ora'}</button>`}<button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">Il backup JSON resta disponibile anche quando il servizio online non è raggiungibile.</p></section>`;
 }
 function backup(summary) {
@@ -232,14 +239,34 @@ function usersMarkup() {
     return `<h3>${accountStatuses[status]} · ${group.length}</h3><div class="users-list">${group.map(u => `<article class="user-card"><div><strong>${esc([u.first_name,u.last_name].filter(Boolean).join(' ') || u.email)}</strong>${u.is_admin ? ' · Amministratore' : ''}<p>${esc(u.email)}${u.phone ? `<br>${esc(u.phone)}` : ''}</p><small>${u.email_confirmed ? 'Email confermata' : 'Email da confermare'} · Richiesta del ${new Date(u.created_at).toLocaleDateString('it-IT')}</small></div>${u.is_admin ? '' : `<div class="user-actions">${u.status !== 'approved' ? `<button class="button primary" data-user-id="${esc(u.user_id)}" data-user-status="approved">${u.status === 'blocked' ? 'Riattiva' : 'Approva'}</button>` : ''}${u.status === 'pending' ? `<button class="button secondary" data-user-id="${esc(u.user_id)}" data-user-status="rejected">Rifiuta</button>` : ''}${u.status === 'approved' ? `<button class="button secondary" data-user-id="${esc(u.user_id)}" data-user-status="blocked">Blocca</button>` : ''}</div>`}</article>`).join('')}</div>`;
   }).join('')}</section>`;
 }
+function accessRequests() { return Model.pendingAccessRequests(accountProfile, managedUsers); }
+function updateNotificationBadge(reminders = Model.balanceReminders(state, todayDate())) {
+  const pending = accessRequests().length, count = reminders.length + pending;
+  const badge = $('#notification-count'), link = $('[data-view="notifiche"]');
+  badge.hidden = count === 0; badge.textContent = count > 99 ? '99+' : count;
+  link.setAttribute('aria-label', `Notifiche: ${reminders.length} saldi da inserire${accountProfile?.is_admin ? ` e ${pending} richieste di accesso` : ''}`);
+}
 async function loadUsers() {
-  if (!accountProfile?.is_admin || usersLoading) return;
-  usersLoading = true; usersError = ''; render();
-  const owner = currentUser?.id;
+  if (!accessGranted || !accountProfile?.is_admin || usersLoading || !navigator.onLine) return;
+  usersLoading = true; usersError = '';
+  const owner = currentUser.id;
   try { const result = await manageAccounts(); if (currentUser?.id === owner) managedUsers = result; }
   catch (error) { if (currentUser?.id === owner) usersError = error.message; }
-  finally { usersLoading = false; if (accessGranted && route() === 'account') render(); }
+  finally {
+    usersLoading = false;
+    if (accessGranted && currentUser?.id === owner) {
+      updateNotificationBadge();
+      if (['account','notifiche'].includes(route()) && !hasPendingUiEdit()) render();
+    }
+  }
 }
+setInterval(() => { if (document.visibilityState === 'visible') loadUsers(); }, 15000);
+function accessRequestNotifications() {
+  if (!accountProfile?.is_admin) return '';
+  const requests = accessRequests();
+  return `<div class="notification-list admin-notification-list"><section class="panel notification-card admin-requests"><div><span class="notification-status">Solo amministratore</span><h2>Richieste di accesso · ${requests.length}</h2><p>${usersError ? esc(usersError) : managedUsers === null ? 'Controllo le richieste…' : requests.length ? 'Ogni richiesta rimane qui finché non la approvi o la rifiuti.' : 'Non ci sono richieste in attesa.'}</p></div><button class="button secondary" data-action="users-refresh" ${usersLoading ? 'disabled' : ''}>Aggiorna richieste</button></section>${requests.map(user => `<section class="panel notification-card"><div><h2>${esc([user.first_name,user.last_name].filter(Boolean).join(' ') || user.email)}</h2><p>${esc(user.email)} · ${user.email_confirmed ? 'Email confermata' : 'Email da confermare'}</p></div><div class="account-actions"><button class="button primary" data-user-id="${esc(user.user_id)}" data-user-status="approved">Approva</button><button class="button secondary" data-user-id="${esc(user.user_id)}" data-user-status="rejected">Rifiuta</button></div></section>`).join('')}</div>`;
+}
+
 function accountView() {
   const field = (id, label, value, extra = '') => `<label for="${id}">${label}</label><input id="${id}" value="${esc(value || '')}" ${extra}>`;
   const email = accountProfile?.email || currentUser?.email || '';
@@ -274,14 +301,14 @@ async function refreshProfile() {
   } catch (error) { if (error.authRequired) { await cloud.logout(); lockAccess(); } }
   finally { accountRefreshing = false; }
 }
-setInterval(() => { if (document.visibilityState === 'visible' && route() === 'account') refreshProfile(); }, 15000);
+setInterval(() => { if (document.visibilityState === 'visible') { if (route() === 'account') refreshProfile(); loadUsers(); } }, 15000);
 
 function notificationsView(summary) {
   const reminders = summary.reminders, pageSize = 12;
   notificationPage = Math.min(notificationPage, Math.max(0, Math.ceil(reminders.length / pageSize) - 1));
   const visible = reminders.slice(notificationPage * pageSize, (notificationPage + 1) * pageSize);
-  return heading('PROMEMORIA', 'Notifiche', 'Dal giorno 1 di ogni mese, ti ricordo il saldo da inserire entro il 5. Il promemoria resta attivo finché lo salvi.') +
-    (reminders.length ? `<p class="record-summary" role="status">${reminders.length} ${reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}. Si aggiornano automaticamente anche dagli altri dispositivi.</p><div class="notification-list">${visible.map(item => `<section class="panel notification-card"><div><span class="notification-status ${item.overdue ? 'overdue' : ''}">${item.overdue ? 'In ritardo' : 'Da compilare entro il 5'}</span><h2>Saldo di ${esc(monthLabel(item.month))}</h2><p>Inserisci il saldo al ${asof(item.month)}, prima dei movimenti di quel giorno. Questo promemoria rimane finché non registri il saldo.</p></div><button class="button primary" data-edit="${item.month}">Inserisci saldo<span class="sr-only"> ${esc(monthLabel(item.month))}</span></button></section>`).join('')}</div>${reminders.length > pageSize ? `<div class="notification-pages"><button class="button secondary" data-notification-page="-1" ${notificationPage === 0 ? 'disabled' : ''}>Più recenti</button><span>Pagina ${notificationPage + 1} di ${Math.ceil(reminders.length / pageSize)}</span><button class="button secondary" data-notification-page="1" ${(notificationPage + 1) * pageSize >= reminders.length ? 'disabled' : ''}>Precedenti</button></div>` : ''}` : '<section class="panel notification-empty"><h2>Tutto aggiornato</h2><p>Non ci sono saldi da inserire. Il prossimo promemoria comparirà all’inizio del mese successivo, se il relativo saldo manca.</p></section>');
+  return heading('PROMEMORIA', 'Notifiche', 'Dal giorno 1 di ogni mese, ti ricordo il saldo da inserire entro il 5. Il promemoria resta attivo finché lo salvi.') + accessRequestNotifications() +
+    (reminders.length ? `<p class="record-summary" role="status">${reminders.length} ${reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}. Si aggiornano automaticamente anche dagli altri dispositivi.</p><div class="notification-list">${visible.map(item => `<section class="panel notification-card"><div><span class="notification-status ${item.overdue ? 'overdue' : ''}">${item.overdue ? 'In ritardo' : 'Da compilare entro il 5'}</span><h2>Saldo di ${esc(monthLabel(item.month))}</h2><p>Inserisci il saldo al ${asof(item.month)}, prima dei movimenti di quel giorno. Questo promemoria rimane finché non registri il saldo.</p></div><button class="button primary" data-edit="${item.month}">Inserisci saldo<span class="sr-only"> ${esc(monthLabel(item.month))}</span></button></section>`).join('')}</div>${reminders.length > pageSize ? `<div class="notification-pages"><button class="button secondary" data-notification-page="-1" ${notificationPage === 0 ? 'disabled' : ''}>Più recenti</button><span>Pagina ${notificationPage + 1} di ${Math.ceil(reminders.length / pageSize)}</span><button class="button secondary" data-notification-page="1" ${(notificationPage + 1) * pageSize >= reminders.length ? 'disabled' : ''}>Precedenti</button></div>` : ''}` : '<section class="panel notification-empty"><h2>Saldi aggiornati</h2><p>Non ci sono saldi da inserire. Il prossimo promemoria comparirà all’inizio del mese successivo, se il relativo saldo manca.</p></section>');
 }
 function setNumbersVisible(visible) {
   numbersVisible = visible;
@@ -295,6 +322,7 @@ function setNumbersVisible(visible) {
 }
 function render() {
   if (!accessGranted) return;
+  if (state && needsGoalSetup() && !['account','backup','notifiche'].includes(route())) history.replaceState(null, '', location.pathname + location.search + '#obiettivo');
   const view = route(); $('#breadcrumb').textContent = titles[view];
   $('#profile-link').classList.toggle('active', view === 'account');
   if (view === 'account') $('#profile-link').setAttribute('aria-current', 'page'); else $('#profile-link').removeAttribute('aria-current');
@@ -308,10 +336,8 @@ function render() {
   visibilityButton.classList.toggle('revealed', numbersVisible);
   const summary = Model.stats(state); summary.plan = Model.goalPlan(state, todayDate()); planDate = summary.plan.today;
   summary.reminders = Model.balanceReminders(state, planDate);
-  const badge = $('#notification-count'), notificationLink = $('[data-view="notifiche"]');
-  badge.hidden = summary.reminders.length === 0; badge.textContent = summary.reminders.length > 99 ? '99+' : summary.reminders.length;
-  notificationLink.setAttribute('aria-label', `Notifiche: ${summary.reminders.length} ${summary.reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}`);
-  if (view === 'account' && accountProfile?.is_admin && managedUsers === null && !usersLoading && !usersError) queueMicrotask(loadUsers);
+  updateNotificationBadge(summary.reminders);
+  if (accountProfile?.is_admin && managedUsers === null && !usersLoading && !usersError) queueMicrotask(loadUsers);
   const drafts = [...content.querySelectorAll('#profile-form, #profile-email-form')].filter(form => dirtyForms.has(form.id)).flatMap(form => [...form.querySelectorAll('input')].map(input => [input.id, input.value]));
   const draftErrors = [...content.querySelectorAll('#profile-error, #profile-email-error')].map(node => [node.id, node.textContent]);
   content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, notifiche: notificationsView, backup, account: accountView }[view])(summary);
@@ -331,6 +357,7 @@ function fillEntry(month) {
   $('#delete-entry').hidden = entry.balanceCents === null && !entry.note;
 }
 function openEntry(month) {
+  if (needsGoalSetup()) { location.hash = 'obiettivo'; render(); return; }
   $('#entry-month').value = month; fillEntry(month); $('#entry-dialog').showModal(); $('#entry-amount').focus();
 }
 function confirmAction(title, text, accept = 'Conferma') {
@@ -450,8 +477,9 @@ content.addEventListener('submit', async event => {
   if (event.target.id !== 'goal-form') return;
   event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
   try {
-    const next = Model.validateState(state); next.settings = { targetCents: Model.parseCents($('#goal-amount').value), deadline: $('#goal-deadline').value };
-    await persist(next); dirtyForms.delete('goal-form'); toast('Obiettivo aggiornato.');
+    const wasSetup = needsGoalSetup();
+    const next = Model.validateState(state); next.settings = { targetCents: Model.parseCents($('#goal-amount').value), deadline: $('#goal-deadline').value, goalChosen: true };
+    await persist(next); dirtyForms.delete('goal-form'); toast('Obiettivo aggiornato.'); if (wasSetup) location.hash = 'panoramica';
   } catch (error) { if ($('#goal-error')) $('#goal-error').textContent = error.message; } finally { if (button.isConnected) button.disabled = false; }
 });
 content.addEventListener('change', event => {
@@ -504,7 +532,7 @@ onCloudChange(async update => {
     else if (route() === 'backup') { const panel = $('#cloud-panel'); if (panel) panel.outerHTML = cloudMarkup(); }
   } catch (error) { toast(error.message, true); }
 });
-document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'hidden') setNumbersVisible(false); if (document.visibilityState === 'visible' && route() === 'account') refreshProfile(); if (state && document.visibilityState === 'visible' && !hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
+document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'hidden') setNumbersVisible(false); if (document.visibilityState === 'visible') { if (route() === 'account') refreshProfile(); loadUsers(); } if (state && document.visibilityState === 'visible' && !hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
 try {
   state = await Storage.load(); const last = Model.stats(state).last;
   if (last) { tableYear = Number(last.month.slice(0, 4)); chartYear = String(tableYear); }

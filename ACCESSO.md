@@ -74,6 +74,16 @@ Per cambiare l’email usa «Nuova email» e «Richiedi cambio email», poi comp
 
 Per una nuova installazione del backend, eseguire anche `supabase/profile-edit.sql` dopo `supabase/accounts.sql`. La funzione di salvataggio permette di modificare soltanto il profilo del proprio account approvato; non permette di cambiare ruoli o approvazioni.
 
+## Primo obiettivo e richieste di accesso
+
+Un nuovo archivio non contiene un obiettivo: importo e scadenza sono vuoti. Dopo l’accesso viene richiesto di sceglierli con «Salva e continua» prima di usare le schermate finanziarie. La scelta rimane modificabile e si sincronizza tra dispositivi.
+
+I vecchi account non amministratori che hanno ancora l’obiettivo automatico di 50.000 € al 2030 senza una conferma vengono invitati a scegliere nuovamente. Questo controllo non riscrive i saldi e non modifica gli archivi di altri utenti; il nuovo obiettivo viene salvato dall’utente nel proprio account. Gli obiettivi personalizzati e quello dell’amministratore restano validi.
+
+Nelle «Notifiche» l’amministratore vede anche le richieste di accesso in attesa, con «Approva» e «Rifiuta». Il pallino del menu conta saldi mancanti e richieste pendenti; la pagina distingue i due tipi. Gli altri utenti vedono soltanto i propri promemoria mensili. Il controllo delle richieste avviene all’apertura e ogni 15 secondi mentre l’app è visibile e connessa. Sono notifiche interne all’app.
+
+Per una nuova installazione applicare anche `supabase/goal-setup.sql`, che consente al server di conservare un obiettivo ancora vuoto. Nessuna migrazione degli archivi personali è necessaria.
+
 
 ## Account degli amici e amministrazione
 

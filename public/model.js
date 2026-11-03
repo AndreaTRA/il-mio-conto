@@ -1,6 +1,6 @@
 /** Pure domain logic. Monetary values are integer cents; missing is null. */
 export const SCHEMA_VERSION = 2;
-export const DEFAULT_SETTINGS = Object.freeze({ targetCents: 5_000_000, deadline: '2030-12-31' });
+export const DEFAULT_SETTINGS = Object.freeze({ targetCents: null, deadline: null });
 const MAX_CENTS = 100_000_000_000;
 
 export function isMonth(value) {
@@ -56,8 +56,9 @@ export function emptyState() {
 export function validateState(raw) {
   if (!raw || ![1, 2].includes(raw.schemaVersion)) throw new Error('Il file non è un backup compatibile con Flowly.');
   const target = raw.settings?.targetCents, deadline = raw.settings?.deadline;
-  if (!Number.isSafeInteger(target) || target <= 0 || target > MAX_CENTS) throw new Error('L’obiettivo deve essere un importo positivo.');
-  if (!isDate(deadline)) throw new Error('La data dell’obiettivo non è valida.');
+  const unset = target === null && deadline === null;
+  if (!unset && (!Number.isSafeInteger(target) || target <= 0 || target > MAX_CENTS)) throw new Error('L’obiettivo deve essere un importo positivo.');
+  if (!unset && !isDate(deadline)) throw new Error('La data dell’obiettivo non è valida.');
   if (!Array.isArray(raw.entries) || raw.entries.length > 119988) throw new Error('L’elenco dei saldi nel backup non è valido.');
   const seen = new Set();
   const entries = raw.entries.map(entry => {
@@ -67,7 +68,17 @@ export function validateState(raw) {
     if (typeof entry.note !== 'string' || entry.note.length > 500) throw new Error('Le note possono contenere al massimo 500 caratteri.');
     return { month: entry.month, balanceCents: entry.balanceCents, note: entry.note };
   }).filter(entry => entry.balanceCents !== null || entry.note !== '').sort((a, b) => a.month.localeCompare(b.month));
-  return { schemaVersion: SCHEMA_VERSION, settings: { targetCents: target, deadline }, entries };
+  if (raw.settings.goalChosen !== undefined && typeof raw.settings.goalChosen !== 'boolean') throw new Error('La conferma dell’obiettivo non è valida.');
+  if (unset && raw.settings.goalChosen === true) throw new Error('Scegli importo e scadenza prima di confermare l’obiettivo.');
+  return { schemaVersion: SCHEMA_VERSION, settings: { targetCents: target, deadline, ...(raw.settings.goalChosen === true ? { goalChosen: true } : {}) }, entries };
+}
+export const hasGoal = state => Number.isSafeInteger(state.settings.targetCents) && state.settings.targetCents > 0 && isDate(state.settings.deadline);
+export function requiresGoalSetup(state, isAdmin = false) {
+  if (!hasGoal(state)) return true;
+  return !isAdmin && state.settings.targetCents === 5000000 && state.settings.deadline === '2030-12-31' && state.settings.goalChosen !== true;
+}
+export function pendingAccessRequests(profile, users) {
+  return profile?.is_admin === true ? (users || []).filter(user => user.status === 'pending' && !user.is_admin) : [];
 }
 export function entryFor(state, month) {
   return state.entries.find(entry => entry.month === month) || { month, balanceCents: null, note: '' };
@@ -93,6 +104,7 @@ export function remainingMonths(month, deadline) {
 export function goalPlan(state, today) {
   if (!isDate(today)) throw new Error('La data di calcolo non è valida.');
   const last = state.entries.filter(entry => entry.balanceCents !== null && entry.month <= today.slice(0, 7)).sort((a, b) => a.month.localeCompare(b.month)).at(-1) || null;
+  if (!hasGoal(state)) return { today, last, monthsLeft: null, missingCents: null, monthlyCents: null, deadlinePassed: false };
   const monthsLeft = today > state.settings.deadline ? 0 : remainingMonths(today.slice(0, 7), state.settings.deadline);
   const missingCents = last ? Math.max(0, state.settings.targetCents - last.balanceCents) : null;
   return { today, last, monthsLeft, missingCents,
@@ -126,8 +138,8 @@ export function stats(state) {
   const previous = last && monthIndex(last.month) > 12 ? entryFor(state, shiftMonth(last.month, -1)) : null;
   const growth = recorded.length > 1 ? last.balanceCents - first.balanceCents : null;
   const elapsedMonths = recorded.length > 1 ? monthIndex(last.month) - monthIndex(first.month) : 0;
-  const gap = last ? Math.max(0, state.settings.targetCents - last.balanceCents) : null;
-  const months = last ? remainingMonths(last.month, state.settings.deadline) : null;
+  const gap = last && hasGoal(state) ? Math.max(0, state.settings.targetCents - last.balanceCents) : null;
+  const months = last && hasGoal(state) ? remainingMonths(last.month, state.settings.deadline) : null;
   const deltas = recorded.map(changeOf).filter(value => value !== null);
   const annual = new Map();
   for (const entry of recorded) {
@@ -137,16 +149,16 @@ export function stats(state) {
   }
   return {
     recorded, first, last, change, gap, months,
-    progress: last ? last.balanceCents / state.settings.targetCents : null,
+    progress: last && hasGoal(state) ? last.balanceCents / state.settings.targetCents : null,
     rate: change !== null && previous?.balanceCents > 0 ? change / previous.balanceCents : null,
     growth, growthRate: growth !== null && first.balanceCents > 0 ? growth / first.balanceCents : null,
     averageMonthlyChange: elapsedMonths ? Math.round(growth / elapsedMonths) || 0 : null, elapsedMonths,
-    needed: last ? gap === 0 ? 0 : months > 0 ? gap / months : null : null,
+    needed: last && hasGoal(state) ? gap === 0 ? 0 : months > 0 ? gap / months : null : null,
     deadlinePassed: Boolean(last && months === 0 && gap > 0),
     up: deltas.filter(value => value > 0).length,
     down: deltas.filter(value => value < 0).length,
     stable: deltas.filter(value => value === 0).length,
-    over: recorded.filter(entry => entry.balanceCents >= state.settings.targetCents).length,
+    over: hasGoal(state) ? recorded.filter(entry => entry.balanceCents >= state.settings.targetCents).length : 0,
     annual: [...annual.values()].map(item => ({ year: item.year, count: item.count, last: item.last, change: item.count > 1 ? item.last - item.first : null }))
   };
 }

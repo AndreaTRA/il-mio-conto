@@ -22,8 +22,9 @@ export function mergeArchives(baseInput, localInput, remoteInput, preference = n
     conflicts.push({ path, local: left === MISSING ? null : left, remote: right === MISSING ? null : right });
     return preference === 'remote' ? right : left;
   }
-  const settings = {};
-  for (const field of ['targetCents', 'deadline']) settings[field] = pick(`settings.${field}`, base ? base.settings[field] : MISSING, local.settings[field], remote.settings[field]);
+  let settings = {};
+  if ([base, local, remote].some(archive => archive && (archive.settings.targetCents === null || archive.settings.goalChosen === true))) settings = pick('settings', base ? base.settings : MISSING, local.settings, remote.settings);
+  else for (const field of ['targetCents', 'deadline']) settings[field] = pick(`settings.${field}`, base ? base.settings[field] : MISSING, local.settings[field], remote.settings[field]);
   const maps = [base?.entries || [], local.entries, remote.entries].map(entries => new Map(entries.map(entry => [entry.month, entry])));
   const months = [...new Set([...maps[0].keys(), ...maps[1].keys(), ...maps[2].keys()])].sort();
   const entries = [];
