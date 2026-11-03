@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import { emptyState, setEntry } from '../public/model.js';
 import { mergeArchives, samePayload, conflictFingerprint } from '../public/sync-merge.js';
 const put = (state, month, amount, note = '') => setEntry(state, { month, balanceCents: amount, note });
+test('notification preferences and goal edits on different devices merge independently', () => {
+ const base=emptyState(); base.settings={targetCents:1000000,deadline:'2030-12-31',goalChosen:true};
+ const local=structuredClone(base),remote=structuredClone(base);
+ local.settings.reminderDay=22; remote.settings.targetCents=2000000;
+ const merged=mergeArchives(base,local,remote);
+ assert.equal(merged.conflicts.length,0);
+ assert.equal(merged.payload.settings.reminderDay,22);
+ assert.equal(merged.payload.settings.targetCents,2000000);
+ const second=structuredClone(base); second.settings.reminderDay=5;
+ assert.equal(mergeArchives(base,local,second).conflicts[0].path,'settings.reminderDay');
+ assert.equal(mergeArchives(base,local,second,'remote').payload.settings.reminderDay,5);
+});
 test('goal setup propagates to a second device without inventing default settings', () => {
   const base = emptyState(), local = emptyState(), remote = emptyState();
   remote.settings = { targetCents: 1500000, deadline: '2032-03-31' };

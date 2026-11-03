@@ -163,6 +163,24 @@ test('monthly reminders start on day one and remain overdue after day five', () 
  assert.equal(M.balanceReminders(state,'2026-11-06')[0].overdue,true);
  assert.equal(M.balanceReminders(state,'2026-11-30')[0].month,'2026-11');
 });
+test('the personal reminder day controls activation and is preserved in backups', () => {
+ const state=add(configuredState(),'2026-10',10000); state.settings.reminderDay=15;
+ assert.equal(M.balanceReminders(state,'2026-11-14').length,0);
+ assert.deepEqual(M.balanceReminders(state,'2026-11-15'),[{month:'2026-11',dueDate:'2026-11-19',overdue:false}]);
+ assert.equal(M.balanceReminders(state,'2026-11-20')[0].overdue,true);
+ assert.deepEqual(M.balanceReminders(state,'2026-12-01').map(r=>r.month),['2026-11']);
+ assert.equal(M.validateState(JSON.parse(JSON.stringify(state))).settings.reminderDay,15);
+ for(const day of [0,32,1.5,null,'15']) assert.throws(()=>M.validateState({...state,settings:{...state.settings,reminderDay:day}}));
+});
+test('late reminder days use the last date of short months, including leap years', () => {
+ assert.equal(M.reminderDate('2026-02',31),'2026-02-28');
+ assert.equal(M.reminderDate('2028-02',31),'2028-02-29');
+ assert.equal(M.reminderDate('2026-04',31),'2026-04-30');
+ const state=add(configuredState(),'2026-01',10); state.settings.reminderDay=31;
+ assert.equal(M.balanceReminders(state,'2026-02-27').length,0);
+ assert.equal(M.balanceReminders(state,'2026-02-28')[0].dueDate,'2026-02-28');
+ assert.equal(M.balanceReminders(state,'2026-03-01')[0].overdue,true);
+});
 test('unfilled reminders survive month and year changes until their balance is recorded', () => {
  let state=add(configuredState(),'2026-10',10000);
  assert.deepEqual(M.balanceReminders(state,'2026-12-01').map(r=>r.month),['2026-12','2026-11']);

@@ -51,7 +51,7 @@ Nella Home l’importo mancante è in evidenza nel riquadro dell’obiettivo; il
 
 ## Notifiche mensili nell’app
 
-La voce **Notifiche** del menu mostra un contatore dei saldi mancanti. Per ogni mese, dal giorno 1 compare il promemoria di inserire il saldo al primo giorno entro il 5. Dopo il 5 diventa **In ritardo** e resta visibile finché quel mese non ha un saldo. Il passaggio al mese successivo non lo elimina. Lo zero è un saldo valido; una nota senza importo non completa il promemoria.
+La voce **Notifiche** del menu mostra un contatore dei saldi mancanti. Per ogni mese, il promemoria compare dal giorno scelto in «Imposta promemoria» (inizialmente il giorno 1). Dopo quattro giorni di tolleranza, al massimo fino a fine mese, diventa **In ritardo** e resta visibile finché quel mese non ha un saldo. Il passaggio al mese successivo non lo elimina. Lo zero è un saldo valido; una nota senza importo non completa il promemoria.
 
 I promemoria si riferiscono ai mesi dal primo mese presente nello storico fino al mese corrente; per un archivio vuoto si parte dal mese corrente. Non vengono richiesti saldi futuri. Le notifiche sono ricavate dai dati dell’account: salvare su un dispositivo le risolve anche sugli altri dopo la sincronizzazione. Dal promemoria puoi aprire direttamente il modulo del mese interessato.
 
@@ -83,6 +83,14 @@ I vecchi account non amministratori che hanno ancora l’obiettivo automatico di
 Nelle «Notifiche» l’amministratore vede anche le richieste di accesso in attesa, con «Approva» e «Rifiuta». Il pallino del menu conta saldi mancanti e richieste pendenti; la pagina distingue i due tipi. Gli altri utenti vedono soltanto i propri promemoria mensili. Il controllo delle richieste avviene all’apertura e ogni 15 secondi mentre l’app è visibile e connessa. Sono notifiche interne all’app.
 
 Per una nuova installazione applicare anche `supabase/goal-setup.sql`, che consente al server di conservare un obiettivo ancora vuoto. Nessuna migrazione degli archivi personali è necessaria.
+
+## Scegliere la data del promemoria
+
+Apri «Notifiche» → «Imposta promemoria», scegli il giorno del mese (1–31) e premi «Salva promemoria». La pagina mostra il giorno salvato e la prossima data prevista. La preferenza appartiene al tuo account e si sincronizza tra i dispositivi; può essere salvata offline e inviata quando torna la connessione.
+
+Nei mesi più corti viene usato l’ultimo giorno disponibile. Il giorno scelto vale anche per il mese in corso; i mesi precedenti ancora da compilare rimangono in elenco. Dopo quattro giorni di tolleranza, al massimo fino alla fine del mese, il promemoria risulta in ritardo. Il saldo richiesto rimane quello all’inizio del mese.
+
+La notifica è visibile all’interno dell’app e nel suo menu: questa impostazione non attiva notifiche push di iOS né email automatiche. Le richieste di accesso dell’amministratore continuano ad apparire appena rilevate, indipendentemente dal giorno mensile scelto.
 
 
 ## Account degli amici e amministrazione

@@ -23,8 +23,11 @@ export function mergeArchives(baseInput, localInput, remoteInput, preference = n
     return preference === 'remote' ? right : left;
   }
   let settings = {};
-  if ([base, local, remote].some(archive => archive && (archive.settings.targetCents === null || archive.settings.goalChosen === true))) settings = pick('settings', base ? base.settings : MISSING, local.settings, remote.settings);
+  const goalOnly = archive => { const { reminderDay, ...goal } = archive.settings; return goal; };
+  if ([base, local, remote].some(archive => archive && (archive.settings.targetCents === null || archive.settings.goalChosen === true))) settings = pick('settings', base ? goalOnly(base) : MISSING, goalOnly(local), goalOnly(remote));
   else for (const field of ['targetCents', 'deadline']) settings[field] = pick(`settings.${field}`, base ? base.settings[field] : MISSING, local.settings[field], remote.settings[field]);
+  const day = pick('settings.reminderDay', base ? base.settings.reminderDay ?? 1 : MISSING, local.settings.reminderDay ?? 1, remote.settings.reminderDay ?? 1);
+  if (day !== 1) settings = { ...settings, reminderDay: day };
   const maps = [base?.entries || [], local.entries, remote.entries].map(entries => new Map(entries.map(entry => [entry.month, entry])));
   const months = [...new Set([...maps[0].keys(), ...maps[1].keys(), ...maps[2].keys()])].sort();
   const entries = [];

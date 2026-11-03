@@ -22,6 +22,11 @@ begin
     or pg_catalog.jsonb_array_length(p_payload->'entries') > 119988
   then return false; end if;
   if p_payload->'settings' ? 'goalChosen' and pg_catalog.jsonb_typeof(p_payload->'settings'->'goalChosen') <> 'boolean' then return false; end if;
+  if p_payload->'settings' ? 'reminderDay' then
+    if pg_catalog.jsonb_typeof(p_payload->'settings'->'reminderDay') <> 'number' then return false; end if;
+    amount := (p_payload->'settings'->>'reminderDay')::numeric;
+    if amount <> pg_catalog.trunc(amount) or amount < 1 or amount > 31 then return false; end if;
+  end if;
   if p_payload->'settings'->'targetCents' = 'null'::jsonb and p_payload->'settings'->'goalChosen' = 'true'::jsonb then return false; end if;
   if p_payload->'settings'->'targetCents' <> 'null'::jsonb then
   amount := (p_payload->'settings'->>'targetCents')::numeric;

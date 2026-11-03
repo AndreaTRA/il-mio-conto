@@ -70,7 +70,9 @@ export function validateState(raw) {
   }).filter(entry => entry.balanceCents !== null || entry.note !== '').sort((a, b) => a.month.localeCompare(b.month));
   if (raw.settings.goalChosen !== undefined && typeof raw.settings.goalChosen !== 'boolean') throw new Error('La conferma dell’obiettivo non è valida.');
   if (unset && raw.settings.goalChosen === true) throw new Error('Scegli importo e scadenza prima di confermare l’obiettivo.');
-  return { schemaVersion: SCHEMA_VERSION, settings: { targetCents: target, deadline, ...(raw.settings.goalChosen === true ? { goalChosen: true } : {}) }, entries };
+  const day = raw.settings.reminderDay ?? 1;
+  if (!Number.isInteger(day) || day < 1 || day > 31 || raw.settings.reminderDay === null) throw new Error('Scegli un giorno del mese da 1 a 31.');
+  return { schemaVersion: SCHEMA_VERSION, settings: { targetCents: target, deadline, ...(raw.settings.goalChosen === true ? { goalChosen: true } : {}), ...(day !== 1 ? { reminderDay: day } : {}) }, entries };
 }
 export const hasGoal = state => Number.isSafeInteger(state.settings.targetCents) && state.settings.targetCents > 0 && isDate(state.settings.deadline);
 export function requiresGoalSetup(state, isAdmin = false) {
@@ -111,7 +113,14 @@ export function goalPlan(state, today) {
     monthlyCents: missingCents === null ? null : missingCents === 0 ? 0 : monthsLeft ? Math.ceil(missingCents / monthsLeft) : null,
     deadlinePassed: today > state.settings.deadline && missingCents !== null && missingCents > 0 };
 }
-/** Active reminders persist after the fifth until the balance is registered.
+export const reminderDay = state => state.settings.reminderDay ?? 1;
+export function reminderDate(month, day) {
+  if (!isMonth(month) || !Number.isInteger(day) || day < 1 || day > 31) throw new Error('Data del promemoria non valida.');
+  let date;
+  do { date = `${month}-${String(day--).padStart(2, '0')}`; } while (!isDate(date));
+  return date;
+}
+/** Active reminders persist until the balance is registered.
  * Recorded zero counts as complete; notes without a balance do not. */
 export function balanceReminders(state, today) {
   if (!isDate(today)) throw new Error('La data del promemoria non è valida.');
@@ -122,7 +131,9 @@ export function balanceReminders(state, today) {
   const count = monthIndex(current) - monthIndex(start);
   for (let offset = count; offset >= 0; offset--) {
     const month = shiftMonth(start, offset);
-    if (!existing.has(month)) reminders.push({ month, dueDate: month + '-05', overdue: today > month + '-05' });
+    const startsOn = reminderDate(month, reminderDay(state));
+    const dueDate = reminderDate(month, Math.min(31, Number(startsOn.slice(-2)) + 4));
+    if (!existing.has(month) && today >= startsOn) reminders.push({ month, dueDate, overdue: today > dueDate });
   }
   return reminders;
 }

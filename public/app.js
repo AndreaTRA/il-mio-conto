@@ -219,7 +219,7 @@ function cloudMarkup() {
   const labels = { 'ready-to-link': 'Collega il tuo archivio', syncing: 'Sincronizzazione in corso', synced: 'Archivio sincronizzato', pending: 'Modifiche in attesa', conflict: 'Controlla i valori in conflitto', error: 'Sincronizzazione interrotta' };
   const conflicts = status.conflict?.fields || [];
   const valueLabel = (value, path) => path === 'settings' ? (value?.targetCents === null ? 'Obiettivo da impostare' : `${money(value.targetCents)} · ${value.deadline}`) : value === null ? 'Eliminato o vuoto' : path.endsWith('Cents') ? money(value) : typeof value === 'object' ? `${money(value.balanceCents)} · ${value.note || 'Nessuna nota'}` : String(value);
-  const fieldLabel = path => path === 'settings' ? 'Obiettivo' : path === 'settings.targetCents' ? 'Importo obiettivo' : path === 'settings.deadline' ? 'Scadenza obiettivo' : `${monthLabel(path.split('.')[1])}${path.endsWith('.note') ? ' · nota' : ' · saldo'}`;
+  const fieldLabel = path => path === 'settings' ? 'Obiettivo' : path === 'settings.reminderDay' ? 'Giorno del promemoria' : path === 'settings.targetCents' ? 'Importo obiettivo' : path === 'settings.deadline' ? 'Scadenza obiettivo' : `${monthLabel(path.split('.')[1])}${path.endsWith('.note') ? ' · nota' : ' · saldo'}`;
   return `<section id="cloud-panel" class="panel backup-panel wide"><h2>${labels[status.phase] || 'Sincronizzazione'}</h2><p>Account: <strong>${esc(status.email || '—')}</strong></p><p id="cloud-status" role="status">${status.phase === 'ready-to-link' ? 'Conferma per collegare i saldi di questo dispositivo al tuo account personale.' : status.phase === 'pending' ? 'Le modifiche sono salvate sul dispositivo. Saranno inviate quando l’app è aperta e online.' : status.phase === 'synced' ? 'Telefono e computer usano lo stesso archivio dopo l’accesso con questa email.' : status.phase === 'syncing' ? 'Controllo gli aggiornamenti e invio le modifiche salvate.' : ''}</p>${status.syncedAt ? `<p class="local-note">Ultimo controllo: ${esc(new Date(status.syncedAt).toLocaleString('it-IT'))}</p>` : ''}${status.error ? `<p class="form-error" role="alert">${esc(status.error)}</p>` : ''}${conflicts.length ? `<p>Le modifiche indipendenti saranno unite. Scegli quali valori usare solo per questi conflitti:</p><ul class="cloud-conflicts">${conflicts.map(item => `<li><strong>${esc(fieldLabel(item.path))}</strong><div>Questo dispositivo: <span>${esc(valueLabel(item.local, item.path))}</span></div><div>Online: <span>${esc(valueLabel(item.remote, item.path))}</span></div></li>`).join('')}</ul><button class="button secondary" data-action="cloud-export-remote">Esporta copia online</button><button class="button primary" data-action="cloud-keep-local">Usa valori del dispositivo</button><button class="button secondary" data-action="cloud-keep-remote">Usa valori online</button>` : `<button class="button primary" data-action="${status.phase === 'ready-to-link' ? 'cloud-enable' : 'cloud-sync'}" ${status.phase === 'syncing' ? 'disabled' : ''}>${status.phase === 'ready-to-link' ? 'Attiva sincronizzazione' : 'Sincronizza ora'}</button>`}<button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">Il backup JSON resta disponibile anche quando il servizio online non è raggiungibile.</p></section>`;
 }
 function backup(summary) {
@@ -303,12 +303,22 @@ async function refreshProfile() {
 }
 setInterval(() => { if (document.visibilityState === 'visible') { if (route() === 'account') refreshProfile(); loadUsers(); } }, 15000);
 
+function reminderSettings(summary) {
+  const day = Model.reminderDay(state), month = summary.plan.today.slice(0,7);
+  const starts = Model.reminderDate(month, day);
+  const current = summary.reminders.find(item => item.month === month);
+  let next = starts;
+  if (starts < summary.plan.today || Model.entryFor(state, month).balanceCents !== null) {
+    try { next = Model.reminderDate(Model.shiftMonth(month, 1), day); } catch { next = null; }
+  }
+  return `<section class="panel form-panel reminder-settings"><h2>Imposta promemoria</h2><p>Il tuo giorno attuale è il <strong>${day} di ogni mese</strong>. Puoi modificarlo qui.</p><form id="reminder-form"><label for="reminder-day">Giorno del mese</label><select id="reminder-day" aria-describedby="reminder-help">${Array.from({length:31},(_,i)=>`<option value="${i+1}" ${day===i+1?'selected':''}>Il giorno ${i+1} di ogni mese</option>`).join('')}</select><p id="reminder-help" class="field-help">Se il mese è più corto, uso l’ultimo giorno disponibile. Il nuovo giorno vale anche per il mese in corso; i mesi precedenti non compilati restano in elenco.</p><p class="reminder-date">${current ? `Il promemoria di ${monthLabel(month)} è già attivo.` : next ? `Prossima data prevista: <strong>${dateLabel(next)}</strong>, se manca il saldo del mese.` : 'Hai raggiunto l’ultimo mese del calendario supportato.'}</p><p class="field-help">Il promemoria compare nella pagina Notifiche e nel pallino del menu quando apri l’app. Rimane finché registri il saldo. Questa impostazione si sincronizza con gli altri dispositivi.</p><p id="reminder-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva promemoria</button></form></section>`;
+}
 function notificationsView(summary) {
   const reminders = summary.reminders, pageSize = 12;
   notificationPage = Math.min(notificationPage, Math.max(0, Math.ceil(reminders.length / pageSize) - 1));
   const visible = reminders.slice(notificationPage * pageSize, (notificationPage + 1) * pageSize);
-  return heading('PROMEMORIA', 'Notifiche', 'Dal giorno 1 di ogni mese, ti ricordo il saldo da inserire entro il 5. Il promemoria resta attivo finché lo salvi.') + accessRequestNotifications() +
-    (reminders.length ? `<p class="record-summary" role="status">${reminders.length} ${reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}. Si aggiornano automaticamente anche dagli altri dispositivi.</p><div class="notification-list">${visible.map(item => `<section class="panel notification-card"><div><span class="notification-status ${item.overdue ? 'overdue' : ''}">${item.overdue ? 'In ritardo' : 'Da compilare entro il 5'}</span><h2>Saldo di ${esc(monthLabel(item.month))}</h2><p>Inserisci il saldo al ${asof(item.month)}, prima dei movimenti di quel giorno. Questo promemoria rimane finché non registri il saldo.</p></div><button class="button primary" data-edit="${item.month}">Inserisci saldo<span class="sr-only"> ${esc(monthLabel(item.month))}</span></button></section>`).join('')}</div>${reminders.length > pageSize ? `<div class="notification-pages"><button class="button secondary" data-notification-page="-1" ${notificationPage === 0 ? 'disabled' : ''}>Più recenti</button><span>Pagina ${notificationPage + 1} di ${Math.ceil(reminders.length / pageSize)}</span><button class="button secondary" data-notification-page="1" ${(notificationPage + 1) * pageSize >= reminders.length ? 'disabled' : ''}>Precedenti</button></div>` : ''}` : '<section class="panel notification-empty"><h2>Saldi aggiornati</h2><p>Non ci sono saldi da inserire. Il prossimo promemoria comparirà all’inizio del mese successivo, se il relativo saldo manca.</p></section>');
+  return heading('PROMEMORIA', 'Notifiche', 'Scegli il tuo giorno per il saldo mensile e gestisci i promemoria ancora aperti.') + reminderSettings(summary) + accessRequestNotifications() +
+    (reminders.length ? `<p class="record-summary" role="status">${reminders.length} ${reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}. Si aggiornano automaticamente anche dagli altri dispositivi.</p><div class="notification-list">${visible.map(item => `<section class="panel notification-card"><div><span class="notification-status ${item.overdue ? 'overdue' : ''}">${item.overdue ? 'In ritardo' : `Da compilare entro il ${Number(item.dueDate.slice(-2))}`}</span><h2>Saldo di ${esc(monthLabel(item.month))}</h2><p>Inserisci il saldo al ${asof(item.month)}, prima dei movimenti di quel giorno. Questo promemoria rimane finché non registri il saldo.</p></div><button class="button primary" data-edit="${item.month}">Inserisci saldo<span class="sr-only"> ${esc(monthLabel(item.month))}</span></button></section>`).join('')}</div>${reminders.length > pageSize ? `<div class="notification-pages"><button class="button secondary" data-notification-page="-1" ${notificationPage === 0 ? 'disabled' : ''}>Più recenti</button><span>Pagina ${notificationPage + 1} di ${Math.ceil(reminders.length / pageSize)}</span><button class="button secondary" data-notification-page="1" ${(notificationPage + 1) * pageSize >= reminders.length ? 'disabled' : ''}>Precedenti</button></div>` : ''}` : '<section class="panel notification-empty"><h2>Saldi aggiornati</h2><p>Non ci sono saldi da inserire. Il promemoria comparirà nel giorno che hai impostato, se il relativo saldo manca.</p></section>');
 }
 function setNumbersVisible(visible) {
   numbersVisible = visible;
@@ -338,8 +348,8 @@ function render() {
   summary.reminders = Model.balanceReminders(state, planDate);
   updateNotificationBadge(summary.reminders);
   if (accountProfile?.is_admin && managedUsers === null && !usersLoading && !usersError) queueMicrotask(loadUsers);
-  const drafts = [...content.querySelectorAll('#profile-form, #profile-email-form')].filter(form => dirtyForms.has(form.id)).flatMap(form => [...form.querySelectorAll('input')].map(input => [input.id, input.value]));
-  const draftErrors = [...content.querySelectorAll('#profile-error, #profile-email-error')].map(node => [node.id, node.textContent]);
+  const drafts = [...content.querySelectorAll('#profile-form, #profile-email-form, #reminder-form')].filter(form => dirtyForms.has(form.id)).flatMap(form => [...form.querySelectorAll('input,select')].map(input => [input.id, input.value]));
+  const draftErrors = [...content.querySelectorAll('#profile-error, #profile-email-error, #reminder-error')].map(node => [node.id, node.textContent]);
   content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, notifiche: notificationsView, backup, account: accountView }[view])(summary);
   drafts.forEach(([id, value]) => { const input = document.getElementById(id); if (input) input.value = value; });
   if (drafts.length) draftErrors.forEach(([id, value]) => { const node = document.getElementById(id); if (node) node.textContent = value; });
@@ -443,6 +453,15 @@ $('#delete-entry').addEventListener('click', async () => {
   try { await persist(Model.setEntry(state, { month, balanceCents: null, note: '' })); $('#entry-dialog').close(); toast('Saldo eliminato.'); } catch (error) { $('#entry-error').textContent = error.message; }
 });
 content.addEventListener('submit', async event => {
+  if (event.target.id === 'reminder-form') {
+    event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
+    try {
+      const next = Model.validateState(state); next.settings.reminderDay = Number($('#reminder-day').value);
+      await persist(next); dirtyForms.delete('reminder-form'); notificationPage = 0; render(); toast('Promemoria aggiornato.');
+    } catch (error) { if ($('#reminder-error')) $('#reminder-error').textContent = error.message; }
+    finally { if (button.isConnected) button.disabled = false; }
+    return;
+  }
   if (event.target.id === 'profile-form') {
     event.preventDefault(); if (profileSaving) return;
     if (!navigator.onLine) { $('#profile-error').textContent = 'Connettiti a internet per salvare il profilo.'; return; }
@@ -478,11 +497,12 @@ content.addEventListener('submit', async event => {
   event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
   try {
     const wasSetup = needsGoalSetup();
-    const next = Model.validateState(state); next.settings = { targetCents: Model.parseCents($('#goal-amount').value), deadline: $('#goal-deadline').value, goalChosen: true };
+    const next = Model.validateState(state); next.settings = { ...next.settings, targetCents: Model.parseCents($('#goal-amount').value), deadline: $('#goal-deadline').value, goalChosen: true };
     await persist(next); dirtyForms.delete('goal-form'); toast('Obiettivo aggiornato.'); if (wasSetup) location.hash = 'panoramica';
   } catch (error) { if ($('#goal-error')) $('#goal-error').textContent = error.message; } finally { if (button.isConnected) button.disabled = false; }
 });
 content.addEventListener('change', event => {
+  if (event.target.id === 'reminder-day') dirtyForms.add('reminder-form');
   if (event.target.id === 'chart-year') { chartYear = event.target.value; render(); }
   if (event.target.id === 'table-year') {
     try { Model.monthsForYear(event.target.value); tableYear = Number(event.target.value); render(); }
@@ -516,7 +536,7 @@ content.addEventListener('submit', async event => {
   } catch (error) { if ($('#cloud-login-error')) $('#cloud-login-error').textContent = error.message; }
   finally { if (button.isConnected) button.disabled = false; }
 });
-document.addEventListener('input', event => { const id = event.target.closest('form')?.id; if (['goal-form', 'cloud-email-form', 'cloud-code-form', 'cloud-link-form', 'profile-form', 'profile-email-form'].includes(id)) dirtyForms.add(id); });
+document.addEventListener('input', event => { const id = event.target.closest('form')?.id; if (['goal-form', 'cloud-email-form', 'cloud-code-form', 'cloud-link-form', 'profile-form', 'profile-email-form', 'reminder-form'].includes(id)) dirtyForms.add(id); });
 window.addEventListener('hashchange', () => { dirtyForms.clear(); render(); if (route() === 'account') refreshProfile(); window.scrollTo({ top: 0, behavior: 'auto' }); });
 window.addEventListener('online', setStatus); window.addEventListener('offline', setStatus);
 let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state && route() === 'panoramica' && !document.querySelector('dialog[open]')) render(); }, 150); });
