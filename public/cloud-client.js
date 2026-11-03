@@ -56,6 +56,28 @@ export class CloudClient {
     const data = await this.request('/functions/v1/password-login', { method: 'POST', body: { action: 'login', identifier, password } });
     return this.saveVerifiedSession(data);
   }
+  async register({ firstName, lastName, email, phone, password }) {
+    firstName = String(firstName || '').trim(); lastName = String(lastName || '').trim();
+    email = String(email || '').trim().toLowerCase(); phone = String(phone || '').trim();
+    if (!firstName || !lastName || firstName.length > 80 || lastName.length > 80) throw new Error('Inserisci nome e cognome (massimo 80 caratteri).');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error('Inserisci un’email valida.');
+    if (!/^[+0-9() .-]{6,30}$/.test(phone)) throw new Error('Inserisci un numero di telefono valido.');
+    if (typeof password !== 'string' || password.length < 12 || password.length > 128) throw new Error('Usa una password tra 12 e 128 caratteri.');
+    await this.request('/auth/v1/signup?redirect_to=' + encodeURIComponent('https://andreatra.github.io/il-mio-conto/'), {
+      method: 'POST', body: { email, password, data: { first_name: firstName, last_name: lastName, phone } }
+    });
+  }
+  async account() {
+    return this.request('/rest/v1/rpc/conto_my_account', { method: 'POST', auth: true, body: {} });
+  }
+  async requireApproved() {
+    const profile = await this.account();
+    if (profile?.status !== 'approved') throw new AuthenticationError(profile?.status === 'blocked' ? 'Il tuo account è stato bloccato. Contatta l’amministratore.' : profile?.status === 'rejected' ? 'La richiesta di accesso non è stata approvata.' : 'La richiesta è in attesa di approvazione. Riprova dopo la conferma dell’amministratore.');
+    return profile;
+  }
+  async manageAccounts(userId = null, status = null) {
+    return this.request('/rest/v1/rpc/conto_manage_accounts', { method: 'POST', auth: true, body: { p_user_id: userId, p_status: status } });
+  }
   async requestPasswordRecovery(identifier) {
     identifier = String(identifier).trim();
     if (!identifier || identifier.length > 254) throw new Error('Inserisci il nome utente o l’email dell’account.');
@@ -146,6 +168,7 @@ export class CloudClient {
     return session.accessToken;
   }
   async readSnapshot(userId) {
+    await this.requireApproved();
     const query = new URLSearchParams({ select: 'user_id,version,payload,updated_at', user_id: 'eq.' + userId });
     const rows = await this.request('/rest/v1/conto_snapshots?' + query, { auth: true, userId });
     if (!Array.isArray(rows)) throw new Error('Archivio online non leggibile.');

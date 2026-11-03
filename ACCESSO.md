@@ -65,3 +65,16 @@ Il riquadro **Da mettere da parte**, accanto all’obiettivo, usa la data odiern
 # Numeri nascosti
 
 L’occhio nell’intestazione mostra o nasconde importi e percentuali nelle schermate e nello storico. Il grafico rimane nascosto insieme ai numeri. Ogni nuova apertura o ritorno dall’app in secondo piano riparte con i dati nascosti: la scelta di mostrarli non viene salvata. I campi per inserire o modificare un saldo rimangono utilizzabili.
+
+
+## Account degli amici e amministrazione
+
+Dal login scegli **Non hai un account? Richiedi l’accesso**. Inserisci nome, cognome, email, telefono e una password di almeno 12 caratteri. Conferma l’email ricevuta: l’accesso ai saldi rimane in attesa dell’approvazione. Il telefono è un recapito visibile all’amministratore, non viene verificato via SMS.
+
+Andrea trova **Gestione utenti** in **Dispositivi → Account e sicurezza**. Le richieste sono ordinate per stato: in attesa, attivi, rifiutati e bloccati. Può approvare, rifiutare, bloccare e riattivare; il proprio account amministratore è protetto da queste operazioni. Il pannello mostra recapiti e conferma email, non i saldi degli altri utenti. Usa **Aggiorna** per caricare nuove richieste.
+
+Le autorizzazioni sono salvate in `conto_profiles`, non nei metadati modificabili dall’utente. I nuovi account sono sempre in attesa. Solo l’UUID verificato dell’amministratore esistente viene abilitato dalla migrazione `supabase/accounts.sql`, da applicare dopo `supabase/schema.sql`. Le funzioni privilegiate sono nello schema privato con permessi espliciti e controllano il chiamante. Il client non può modificare direttamente profili e ruoli. L’account bloccato perde immediatamente lettura e scrittura online anche con token ancora valido; l’interfaccia lo riporta al login al controllo successivo. L’accesso offline già autorizzato può continuare fino alla riconnessione.
+
+Gli archivi locali, il salvataggio precedente e le copie dei conflitti sono separati per account. La migrazione copia il vecchio archivio soltanto nel relativo account, conservando gli originali. Gli account nuovi partono vuoti. Il cambio di sessione in un’altra scheda nasconde la dashboard precedente.
+
+Verifiche: test unitari client e sincronizzazione, prova browser con API simulate (registrazione, approvazione, cambio account, conservazione archivio, blocco), transazione sul database reale con utenti fittizi annullata integralmente (RLS, scrittura, falsi ruoli nei metadati, privilegi amministratore, protezione del proprietario). Nessuna prova invia email o modifica i saldi reali. Configurazione Auth verificata: registrazione consentita e conferma email richiesta.

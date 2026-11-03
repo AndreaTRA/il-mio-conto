@@ -27,9 +27,9 @@ export const signIn = (identifier, password) => client.signIn(identifier, passwo
 export const requestPasswordRecovery = identifier => client.requestPasswordRecovery(identifier);
 export const verifyRecoveryLink = link => client.verifyRecoveryLink(link);
 export const resetPassword = (candidate, password) => client.resetPassword(candidate, password);
-export async function initializeCloud() {
+export async function initializeCloud({ initialize = true } = {}) {
   if (configurationError) { cloud.emit({ phase: 'not-configured', error: configurationError.message }); return; }
-  await cloud.initialize();
+  if (initialize) await cloud.initialize();
   window.addEventListener('online', () => cloud.trigger());
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cloud.trigger(); });
   let retryAfter = 0;
@@ -40,3 +40,7 @@ export async function initializeCloud() {
     cloud.trigger();
   }, 3000);
 }
+
+export const register = details => client.register(details);
+export const requireApproved = () => client.requireApproved();
+export const manageAccounts = (id, status) => client.manageAccounts(id, status);

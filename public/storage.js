@@ -8,6 +8,8 @@ const scope = new URL('./', import.meta.url).pathname;
 const DB_NAME = `il-mio-conto:${scope}`;
 const STORE = 'documents';
 let opening;
+let archivePrefix = '';
+const archiveKey = name => archivePrefix + name;
 const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(DB_NAME) : null;
 const subscribers = new Set();
 if (channel) channel.onmessage = () => subscribers.forEach(fn => fn());
@@ -38,17 +40,17 @@ export async function load() {
   const db = await open();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, 'readwrite'), store = transaction.objectStore(STORE);
-    const request = store.get('current'); let result;
+    const request = store.get(archiveKey('current')); let result;
     request.onsuccess = () => {
       try {
         if (request.result) result = document(request.result);
         else {
           let legacy;
-          try { const text = localStorage.getItem('il-mio-conto.state.v1'); if (text) legacy = JSON.parse(text); } catch (error) {
+          try { const text = !archivePrefix && localStorage.getItem('il-mio-conto.state.v1'); if (text) legacy = JSON.parse(text); } catch (error) {
             if (error instanceof SyntaxError) throw new Error('Il vecchio archivio non è leggibile. Non è stato sostituito.');
           }
           result = document(legacy || emptyState());
-          store.put(result, 'current');
+          store.put(result, archiveKey('current'));
         }
       } catch (error) { reject(error); transaction.abort(); }
     };
@@ -62,13 +64,13 @@ export async function save(next, expectedRevision) {
   const clean = validateState(next), db = await open();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, 'readwrite'), store = transaction.objectStore(STORE);
-    const request = store.get('current'); let updated, failure;
+    const request = store.get(archiveKey('current')); let updated, failure;
     request.onsuccess = () => {
       try {
         const previous = request.result ? document(request.result) : document(emptyState());
         if (previous.revision !== expectedRevision) { failure = new ConflictError(previous); transaction.abort(); return; }
         updated = { ...clean, revision: previous.revision + 1, updatedAt: new Date().toISOString(), sync: previous.sync };
-        store.put(previous, 'previous'); store.put(updated, 'current');
+        store.put(previous, archiveKey('previous')); store.put(updated, archiveKey('current'));
       } catch (error) { failure = error; transaction.abort(); }
     };
     transaction.oncomplete = () => { channel?.postMessage('changed'); resolve(updated); };
@@ -79,7 +81,7 @@ export async function save(next, expectedRevision) {
 export async function previous() {
   const db = await open();
   return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE).objectStore(STORE).get('previous');
+    const request = db.transaction(STORE).objectStore(STORE).get(archiveKey('previous'));
     request.onsuccess = () => { try { resolve(request.result ? document(request.result) : null); } catch (error) { reject(error); } };
     request.onerror = () => reject(request.error);
   });
@@ -87,7 +89,7 @@ export async function previous() {
 export async function rawRecovery() {
   const db = await open();
   return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE).objectStore(STORE).get('current');
+    const request = db.transaction(STORE).objectStore(STORE).get(archiveKey('current'));
     request.onsuccess = () => resolve(request.result ?? null);
     request.onerror = () => reject(request.error);
   });
@@ -96,7 +98,7 @@ export async function rawRecovery() {
 async function updateCurrent(transform, expectedRevision) {
   const db = await open();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE, 'readwrite'), store = transaction.objectStore(STORE), request = store.get('current');
+    const transaction = db.transaction(STORE, 'readwrite'), store = transaction.objectStore(STORE), request = store.get(archiveKey('current'));
     let result, failure, notifyChange = false;
     request.onsuccess = () => {
       try {
@@ -104,8 +106,8 @@ async function updateCurrent(transform, expectedRevision) {
         if (expectedRevision !== undefined && current.revision !== expectedRevision) throw new ConflictError(current);
         result = transform(current);
         notifyChange = !samePayload(current, result) || !sameIdentity(current.sync, result.sync);
-        if (!samePayload(current, result)) store.put(current, 'previous');
-        store.put(result, 'current');
+        if (!samePayload(current, result)) store.put(current, archiveKey('previous'));
+        store.put(result, archiveKey('current'));
       } catch (error) { failure = error; transaction.abort(); }
     };
     transaction.oncomplete = () => { if (notifyChange) channel?.postMessage('changed'); resolve(result); };
@@ -144,7 +146,7 @@ export function acknowledgeCloud(identity, version, payload) {
 export async function readMeta(key) {
   const db = await open();
   return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE).objectStore(STORE).get('meta:' + key);
+    const request = db.transaction(STORE).objectStore(STORE).get('meta:' + (key === 'last-cloud-conflict' ? archivePrefix : '') + key);
     request.onsuccess = () => resolve(request.result ?? null); request.onerror = () => reject(request.error);
   });
 }
@@ -152,7 +154,37 @@ export async function writeMeta(key, value) {
   const db = await open();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, 'readwrite'), store = transaction.objectStore(STORE);
+    if (key === 'last-cloud-conflict') key = archivePrefix + key;
     if (value === null) store.delete('meta:' + key); else store.put(value, 'meta:' + key);
-    transaction.oncomplete = () => resolve(); transaction.onerror = transaction.onabort = () => reject(transaction.error || new Error('Impossibile salvare l’accesso.'));
+    transaction.oncomplete = () => { if (key.startsWith('auth-session:')) channel?.postMessage('auth'); resolve(); }; transaction.onerror = transaction.onabort = () => reject(transaction.error || new Error('Impossibile salvare l’accesso.'));
   });
+}
+
+// Copy the legacy archive only to its verified owner, retaining the original.
+export async function selectAccount(identity, { claimLegacy = false } = {}) {
+  const prefix = `account:${identity.projectUrl}:${identity.userId}:`;
+  const db = await open();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite'), store = tx.objectStore(STORE);
+    const existing = store.get(prefix + 'current');
+    existing.onsuccess = () => {
+      if (existing.result) return;
+      const legacy = store.get('current');
+      legacy.onsuccess = () => {
+        try {
+        const raw = legacy.result;
+        const owned = raw?.sync ? sameIdentity(raw.sync, identity) : claimLegacy;
+        const next = raw && owned ? document(raw) : document(emptyState());
+        next.sync ||= { ...identity, remoteVersion: 0, base: null, syncedAt: null };
+        store.put(next, prefix + 'current');
+        if (owned) {
+          const previous = store.get('previous');
+          previous.onsuccess = () => { if (previous.result) store.put(previous.result, prefix + 'previous'); };
+        }
+        } catch (error) { reject(error); tx.abort(); }
+      };
+    };
+    tx.oncomplete = resolve; tx.onerror = tx.onabort = () => reject(tx.error || new Error('Archivio non modificato.'));
+  });
+  archivePrefix = prefix;
 }

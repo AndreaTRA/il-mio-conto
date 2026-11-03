@@ -1,7 +1,7 @@
 import * as Model from './model.js';
 import * as Storage from './storage.js';
 import { initializePwa, isInstalled } from './pwa.js';
-import { cloud, onCloudChange, initializeCloud, sendCode, verifyCode, verifyEmailLink, takeRedirectSession, acceptRedirectSession, session, signIn, requestPasswordRecovery, verifyRecoveryLink, resetPassword } from './cloud.js';
+import { cloud, onCloudChange, initializeCloud, sendCode, verifyCode, verifyEmailLink, takeRedirectSession, acceptRedirectSession, session, signIn, requestPasswordRecovery, verifyRecoveryLink, resetPassword, register, requireApproved, manageAccounts } from './cloud.js';
 import { samePayload, sameIdentity } from './sync-merge.js';
 import { createAuthUi } from './auth-ui.js';
 
@@ -37,10 +37,11 @@ let state, tableYear = new Date().getFullYear(), chartYear = String(tableYear), 
 let pwaStatus = 'preparing', activateUpdate;
 let pendingEmail = '';
 let accessGranted = false, authReady = false, currentUser = null;
+let accountProfile = null, managedUsers = null, usersLoading = false, usersError = '';
 let planDate = '';
 let notificationPage = 0;
 let pendingArchiveRefresh = false;
-const authUi = createAuthUi({ root: $('#auth-root'), signIn, recover: requestPasswordRecovery, verifyLink: verifyRecoveryLink, resetPassword, onAuthenticated: openAuthenticatedArchive });
+const authUi = createAuthUi({ root: $('#auth-root'), signIn, register, recover: requestPasswordRecovery, verifyLink: verifyRecoveryLink, resetPassword, onAuthenticated: openAuthenticatedArchive });
 authUi.show('loading');
 const dirtyForms = new Set();
 const hasPendingUiEdit = () => Boolean(document.querySelector('dialog[open]') || dirtyForms.size);
@@ -52,7 +53,7 @@ function toast(message, error = false) {
 }
 function lockAccess() {
   numbersVisible = false;
-  accessGranted = false; currentUser = null; $('#app-shell').hidden = true;
+  accessGranted = false; currentUser = null; accountProfile = null; managedUsers = null; $('#app-shell').hidden = true;
   document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
   content.replaceChildren(); dirtyForms.clear();
   if ($('#auth-root').hidden || authUi.mode === 'loading') authUi.show('login');
@@ -60,11 +61,18 @@ function lockAccess() {
 async function openAuthenticatedArchive() {
   const active = await session();
   if (!active) throw new Error('Accedi per aprire il tuo archivio.');
-  const latest = await Storage.load();
-  if (latest.sync && !sameIdentity(latest.sync, { projectUrl: active.projectUrl, userId: active.user.id })) {
-    await cloud.logout(); throw new Error('Questo dispositivo contiene l’archivio di un altro account. Accedi con l’account originale.');
+  if (navigator.onLine !== false) {
+    try { accountProfile = await requireApproved(); }
+    catch (error) { await cloud.logout(); throw error; }
+    await Storage.writeMeta('account-access:' + active.user.id, accountProfile);
+  } else {
+    accountProfile = await Storage.readMeta('account-access:' + active.user.id);
+    if (accountProfile?.status !== 'approved') throw new Error('Connettiti a internet per verificare l’accesso.');
   }
-  state = latest; currentUser = active.user;
+  if (cloud.running) await cloud.running;
+  await Storage.selectAccount({ projectUrl: active.projectUrl, userId: active.user.id }, { claimLegacy: accountProfile.is_admin });
+  state = await Storage.load(); currentUser = active.user;
+  managedUsers = null; usersError = '';
   authUi.message('Accesso riuscito. Sincronizzo i tuoi dati…');
   await cloud.initialize({ autoLink: true });
   if (!await session()) throw new Error(cloud.status.error || 'Accedi di nuovo per aprire il tuo archivio.');
@@ -213,9 +221,27 @@ function backup(summary) {
     <section class="panel backup-panel"><h2>Su iPhone, dalla Home</h2><ol><li>Apri il link pubblicato in Safari.</li><li>Tocca Condividi e “Aggiungi alla schermata Home”.</li><li>Apri l’app dall’icona e accedi con la stessa email.</li></ol><p>${isInstalled() ? 'Stai usando l’app dalla schermata Home.' : 'Dopo il primo caricamento completo l’app si prepara per l’uso offline.'}</p><p>Stato: ${pwaStatus === 'offline-ready' ? 'pronta per l’uso offline' : 'apri l’app online per completare la preparazione offline'}.</p></section>
     <section class="panel backup-panel"><h2>Telefono e computer</h2><p>Con la sincronizzazione attiva, i saldi vengono controllati automaticamente mentre l’app è aperta, dopo il salvataggio, alla riapertura e circa ogni 3 secondi mentre è visibile. Se due valori sono in conflitto, scegli quale conservare.</p><p>GitHub distribuisce l’app. L’archivio online personale è in Supabase; una copia resta sul dispositivo per l’uso offline.</p>${navigator.storage?.persist ? '<button class="button secondary" data-action="persist-storage">Richiedi conservazione dati</button>' : ''}<p class="local-note">Conserva un backup anche dopo l’attivazione della sincronizzazione.</p></section></div>`;
 }
+const accountStatuses = { pending: 'In attesa', approved: 'Attivo', rejected: 'Rifiutato', blocked: 'Bloccato' };
+function usersMarkup() {
+  if (!accountProfile?.is_admin) return '';
+  const users = managedUsers || [];
+  return `<section class="panel users-panel"><div class="users-heading"><div><p class="eyebrow">AMMINISTRAZIONE</p><h2>Gestione utenti</h2></div><button class="button secondary" data-action="users-refresh" ${usersLoading ? 'disabled' : ''}>Aggiorna</button></div><p>Approva le richieste, rifiuta l’accesso o blocca gli account. Gli archivi personali rimangono separati.</p><p role="status">${esc(usersError || (usersLoading ? 'Caricamento utenti…' : `${users.filter(u => u.status === 'pending').length} richieste in attesa`))}</p>${['pending','approved','rejected','blocked'].map(status => {
+    const group = users.filter(u => u.status === status);
+    if (!group.length) return '';
+    return `<h3>${accountStatuses[status]} · ${group.length}</h3><div class="users-list">${group.map(u => `<article class="user-card"><div><strong>${esc([u.first_name,u.last_name].filter(Boolean).join(' ') || u.email)}</strong>${u.is_admin ? ' · Amministratore' : ''}<p>${esc(u.email)}${u.phone ? `<br>${esc(u.phone)}` : ''}</p><small>${u.email_confirmed ? 'Email confermata' : 'Email da confermare'} · Richiesta del ${new Date(u.created_at).toLocaleDateString('it-IT')}</small></div>${u.is_admin ? '' : `<div class="user-actions">${u.status !== 'approved' ? `<button class="button primary" data-user-id="${esc(u.user_id)}" data-user-status="approved">${u.status === 'blocked' ? 'Riattiva' : 'Approva'}</button>` : ''}${u.status === 'pending' ? `<button class="button secondary" data-user-id="${esc(u.user_id)}" data-user-status="rejected">Rifiuta</button>` : ''}${u.status === 'approved' ? `<button class="button secondary" data-user-id="${esc(u.user_id)}" data-user-status="blocked">Blocca</button>` : ''}</div>`}</article>`).join('')}</div>`;
+  }).join('')}</section>`;
+}
+async function loadUsers() {
+  if (!accountProfile?.is_admin || usersLoading) return;
+  usersLoading = true; usersError = ''; render();
+  const owner = currentUser?.id;
+  try { const result = await manageAccounts(); if (currentUser?.id === owner) managedUsers = result; }
+  catch (error) { if (currentUser?.id === owner) usersError = error.message; }
+  finally { usersLoading = false; if (accessGranted && route() === 'account') render(); }
+}
 function accountView() {
   return heading('IL TUO ACCOUNT', 'Account e sicurezza', 'Gestisci l’accesso al tuo spazio personale.') +
-    `<section class="panel form-panel"><h2>Il tuo profilo</h2><p>Nome utente: <strong>${esc(currentUser?.username || '—')}</strong></p><p>Email di recupero: <strong>${esc(currentUser?.email || '')}</strong></p><p>Questa email riceve il link per scegliere una nuova password.</p><button class="button primary" data-action="account-reset">Recupera o cambia password</button><button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">La password non viene salvata dall’app. La sessione di accesso resta sul dispositivo finché non esci.</p></section>`;
+    `<section class="panel form-panel"><h2>Il tuo profilo</h2><p>Nome: <strong>${esc([accountProfile?.first_name,accountProfile?.last_name].filter(Boolean).join(' ') || currentUser?.username || '—')}</strong></p><p>Email di recupero: <strong>${esc(currentUser?.email || '')}</strong></p><p>Questa email riceve il link per scegliere una nuova password.</p><button class="button primary" data-action="account-reset">Recupera o cambia password</button><button class="button secondary" data-action="cloud-logout">Esci dall’account</button><p class="local-note">La password non viene salvata dall’app. La sessione di accesso resta sul dispositivo finché non esci.</p></section>${usersMarkup()}`;
 }
 function notificationsView(summary) {
   const reminders = summary.reminders, pageSize = 12;
@@ -250,6 +276,7 @@ function render() {
   const badge = $('#notification-count'), notificationLink = $('[data-view="notifiche"]');
   badge.hidden = summary.reminders.length === 0; badge.textContent = summary.reminders.length > 99 ? '99+' : summary.reminders.length;
   notificationLink.setAttribute('aria-label', `Notifiche: ${summary.reminders.length} ${summary.reminders.length === 1 ? 'saldo da inserire' : 'saldi da inserire'}`);
+  if (view === 'account' && accountProfile?.is_admin && managedUsers === null && !usersLoading && !usersError) queueMicrotask(loadUsers);
   content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, notifiche: notificationsView, backup, account: accountView }[view])(summary);
 }
 function nextMonth() {
@@ -288,8 +315,20 @@ document.addEventListener('click', async event => {
   const edit = event.target.closest('[data-edit]'); if (edit) { openEntry(edit.dataset.edit); return; }
   const step = event.target.closest('[data-year-step]'); if (step) { tableYear += Number(step.dataset.yearStep); render(); return; }
   const notificationStep = event.target.closest('[data-notification-page]'); if (notificationStep) { notificationPage = Math.max(0, notificationPage + Number(notificationStep.dataset.notificationPage)); render(); return; }
+  const userAction = event.target.closest('[data-user-id]');
+  if (userAction && accessGranted && accountProfile?.is_admin) {
+    const id = userAction.dataset.userId, status = userAction.dataset.userStatus;
+    const user = managedUsers?.find(u => u.user_id === id);
+    if (!user || user.is_admin) return;
+    if (!await confirmAction(`${accountStatuses[status]}: confermare?`, `${user.first_name} ${user.last_name} · ${user.email}`, status === 'approved' ? 'Conferma accesso' : status === 'blocked' ? 'Blocca account' : 'Rifiuta richiesta')) return;
+    userAction.disabled = true;
+    try { managedUsers = await manageAccounts(id, status); render(); toast('Stato dell’account aggiornato.'); }
+    catch (error) { toast(error.message, true); if (userAction.isConnected) userAction.disabled = false; }
+    return;
+  }
   const action = event.target.closest('[data-action]')?.dataset.action;
   try {
+    if (action === 'users-refresh') await loadUsers();
     if (action === 'add') openEntry(nextMonth());
     if (action === 'export') exportBackup();
     if (action === 'csv') { download('saldi-del-conto.csv', Model.csvFor(state), 'text/csv;charset=utf-8'); toast('CSV esportato.'); }
@@ -383,7 +422,7 @@ document.addEventListener('input', event => { const id = event.target.closest('f
 window.addEventListener('hashchange', () => { dirtyForms.clear(); render(); window.scrollTo({ top: 0, behavior: 'auto' }); });
 window.addEventListener('online', setStatus); window.addEventListener('offline', setStatus);
 let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state && route() === 'panoramica' && !document.querySelector('dialog[open]')) render(); }, 150); });
-Storage.subscribe(async () => { if (!hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
+Storage.subscribe(async () => { if (accessGranted && (await session())?.user.id !== currentUser?.id) { lockAccess(); return; } if (!hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
 onCloudChange(async update => {
   setStatus();
   if (!authReady) return;
@@ -408,7 +447,8 @@ try {
     if (incoming.session?.recovery) { recovering = true; authUi.recovery(incoming.session); }
     else if (incoming.session && await confirmAction('Conferma accesso', `Accedere come ${incoming.session.user.email}? L’archivio locale verrà collegato solo con l’attivazione della sincronizzazione.`, 'Accedi')) await acceptRedirectSession(incoming.session);
   } catch (error) { accessError = error.message; }
-  await initializeCloud(); authReady = true;
+  authReady = true;
+  await initializeCloud({ initialize: false });
   if (!recovering && await session()) await openAuthenticatedArchive();
   else { lockAccess(); if (accessError) authUi.message(accessError, true); }
 } catch (error) {

@@ -41,7 +41,7 @@ test('email OTP verification persists a session and sends no credentials in URLs
 });
 test('concurrent expired requests share one refresh and use the new bearer token', async () => {
   let refreshes = 0;
-  const app = harness(async url => { if (url.includes('/token?')) { refreshes++; return Response.json(tokenResponse('new-access')); } return Response.json([]); });
+  const app = harness(async url => { if (url.includes('/token?')) { refreshes++; return Response.json(tokenResponse('new-access')); } return Response.json(url.endsWith('/conto_my_account') ? { status: 'approved' } : []); });
   app.meta.set(app.client.sessionKey, { projectUrl: config.url, user, expiresAt: 0, accessToken: 'old-access', refreshToken: 'old-refresh' });
   await Promise.all([app.client.readSnapshot(user.id), app.client.readSnapshot(user.id)]);
   assert.equal(refreshes, 1);
@@ -123,4 +123,23 @@ test('a recovery link opens only a pending recovery session and cannot sign in d
   assert.equal(app.requests[1].options.method,'PUT');
   assert.equal(app.requests[1].options.headers.Authorization,'Bearer access-one');
   assert.ok(!JSON.stringify([...app.meta]).includes('a-new-test-password'));
+});
+
+test('registration validates details and never stores a signup session or admin claims', async () => {
+  const app = harness(async () => Response.json(tokenResponse()));
+  const details = { firstName: ' Ada ', lastName: ' Rossi ', email: 'ADA@example.test', phone: '+39 333 1234567', password: 'a-long-test-password' };
+  await app.client.register(details);
+  assert.equal(await app.client.session(), undefined);
+  const body = JSON.parse(app.requests[0].options.body);
+  assert.deepEqual(body.data, { first_name: 'Ada', last_name: 'Rossi', phone: details.phone });
+  assert.equal(body.email, 'ada@example.test');
+  await assert.rejects(() => app.client.register({ ...details, phone: 'invalid' }));
+  assert.equal(app.requests.length, 1);
+});
+for (const status of ['pending', 'rejected', 'blocked']) test(`${status} accounts cannot start a snapshot download`, async () => {
+  const app = harness(async () => Response.json({ status }));
+  app.meta.set(app.client.sessionKey, { projectUrl: config.url, user, expiresAt: 99999999, accessToken: 'token', refreshToken: 'refresh' });
+  await assert.rejects(() => app.client.readSnapshot(user.id), error => error.authRequired === true);
+  assert.equal(app.requests.length, 1);
+  assert.ok(app.requests[0].url.endsWith('/conto_my_account'));
 });
