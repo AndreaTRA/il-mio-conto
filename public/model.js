@@ -1,5 +1,6 @@
 /** Pure domain logic. Monetary values are integer cents; missing is null. */
-export const SCHEMA_VERSION = 2;
+import { validateLedger, isInstant } from './ledger.js';
+export const SCHEMA_VERSION = 3;
 export const DEFAULT_SETTINGS = Object.freeze({ targetCents: null, deadline: null });
 const MAX_CENTS = 100_000_000_000;
 
@@ -50,11 +51,28 @@ export function parseCents(input) {
   return Object.is(value, -0) ? 0 : value;
 }
 export function emptyState() {
-  return { schemaVersion: SCHEMA_VERSION, settings: { ...DEFAULT_SETTINGS }, entries: [] };
+  return { schemaVersion: SCHEMA_VERSION, settings: { ...DEFAULT_SETTINGS }, entries: [], accounts: [], transactions: [] };
+}
+export function monthAtInstant(instant) {
+  if (!isInstant(instant)) throw new Error('Data della verifica non valida.');
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit' }).formatToParts(new Date(instant)).map(part => [part.type, part.value]));
+  return `${parts.year.padStart(4, '0')}-${parts.month}`;
+}
+function cleanMonthlySnapshot(entry) {
+  if (entry.verifiedAt === undefined && entry.accountBalances === undefined) return {};
+  if (!isInstant(entry.verifiedAt) || monthAtInstant(entry.verifiedAt) !== entry.month || !Array.isArray(entry.accountBalances) || !entry.accountBalances.length || entry.accountBalances.length > 100) throw new Error('La verifica mensile dei conti non è valida.');
+  const seen = new Set();
+  const accountBalances = entry.accountBalances.map(item => {
+    if (!item || typeof item.accountId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(item.accountId) || seen.has(item.accountId) || typeof item.name !== 'string' || !item.name.trim() || [...item.name.trim()].length > 60 || !Number.isSafeInteger(item.balanceCents) || Math.abs(item.balanceCents) > MAX_CENTS) throw new Error('Un saldo mensile di un conto non è valido.');
+    seen.add(item.accountId);
+    return { accountId: item.accountId, name: item.name.trim(), balanceCents: item.balanceCents };
+  }).sort((a, b) => a.accountId.localeCompare(b.accountId));
+  if (accountBalances.reduce((sum, item) => sum + item.balanceCents, 0) !== entry.balanceCents) throw new Error('Il totale mensile non corrisponde ai saldi dei conti.');
+  return { verifiedAt: entry.verifiedAt, accountBalances };
 }
 /** Accepts old 60-month backups, discarding only their empty placeholder rows. */
 export function validateState(raw) {
-  if (!raw || ![1, 2].includes(raw.schemaVersion)) throw new Error('Il file non è un backup compatibile con Flowly.');
+  if (!raw || ![1, 2, 3].includes(raw.schemaVersion)) throw new Error('Il file non è un backup compatibile con Flowly. Aggiorna l’app se necessario.');
   const target = raw.settings?.targetCents, deadline = raw.settings?.deadline;
   const unset = target === null && deadline === null;
   if (!unset && (!Number.isSafeInteger(target) || target <= 0 || target > MAX_CENTS)) throw new Error('L’obiettivo deve essere un importo positivo.');
@@ -66,13 +84,14 @@ export function validateState(raw) {
     seen.add(entry.month);
     if (entry.balanceCents !== null && (!Number.isSafeInteger(entry.balanceCents) || Math.abs(entry.balanceCents) > MAX_CENTS)) throw new Error('Un saldo nel backup non è valido.');
     if (typeof entry.note !== 'string' || entry.note.length > 500) throw new Error('Le note possono contenere al massimo 500 caratteri.');
-    return { month: entry.month, balanceCents: entry.balanceCents, note: entry.note };
+    return { month: entry.month, balanceCents: entry.balanceCents, note: entry.note, ...cleanMonthlySnapshot(entry) };
   }).filter(entry => entry.balanceCents !== null || entry.note !== '').sort((a, b) => a.month.localeCompare(b.month));
   if (raw.settings.goalChosen !== undefined && typeof raw.settings.goalChosen !== 'boolean') throw new Error('La conferma dell’obiettivo non è valida.');
   if (unset && raw.settings.goalChosen === true) throw new Error('Scegli importo e scadenza prima di confermare l’obiettivo.');
   const day = raw.settings.reminderDay ?? 1;
   if (!Number.isInteger(day) || day < 1 || day > 31 || raw.settings.reminderDay === null) throw new Error('Scegli un giorno del mese da 1 a 31.');
-  return { schemaVersion: SCHEMA_VERSION, settings: { targetCents: target, deadline, ...(raw.settings.goalChosen === true ? { goalChosen: true } : {}), ...(day !== 1 ? { reminderDay: day } : {}) }, entries };
+  const ledger = validateLedger(raw.schemaVersion < 3 ? [] : raw.accounts, raw.schemaVersion < 3 ? [] : raw.transactions);
+  return { schemaVersion: SCHEMA_VERSION, settings: { targetCents: target, deadline, ...(raw.settings.goalChosen === true ? { goalChosen: true } : {}), ...(day !== 1 ? { reminderDay: day } : {}) }, entries, ...ledger };
 }
 export const hasGoal = state => Number.isSafeInteger(state.settings.targetCents) && state.settings.targetCents > 0 && isDate(state.settings.deadline);
 export function requiresGoalSetup(state, isAdmin = false) {
@@ -90,6 +109,32 @@ export function setEntry(state, entry) {
   draft.entries = draft.entries.filter(existing => existing.month !== entry.month);
   draft.entries.push(entry);
   return validateState(draft);
+}
+/** A recorded month's original account set survives later renames or exclusions. */
+export function monthlyAccountRows(state, month) {
+  const recorded = entryFor(state, month).accountBalances;
+  const rows = recorded ? recorded.map(item => ({ ...item, name: state.accounts.find(account => account.id === item.accountId)?.name || item.name })) : [];
+  for (const account of state.accounts.filter(account => !account.archived)) {
+    if (!rows.some(row => row.accountId === account.id) && (!recorded || monthAtInstant(account.openingAt) <= month)) rows.push({ accountId: account.id, name: account.name, balanceCents: null });
+  }
+  return rows;
+}
+/** Save all verified balances and their total atomically. Older snapshots never rewind live checkpoints. */
+export function reconcileMonthly(state, { month, verifiedAt, balances, note = '' }, now = new Date().toISOString()) {
+  const draft = validateState(state);
+  if (!isMonth(month) || !isInstant(now) || !isInstant(verifiedAt) || verifiedAt > now || monthAtInstant(verifiedAt) !== month) throw new Error('Scegli una data della verifica nel mese indicato, non futura.');
+  const expected = monthlyAccountRows(draft, month);
+  if (!expected.length) throw new Error('Aggiungi almeno un conto o un’attività prima di verificare i saldi.');
+  if (!Array.isArray(balances) || balances.length !== expected.length || new Set(balances.map(item => item.accountId)).size !== expected.length || expected.some(row => !balances.some(item => item.accountId === row.accountId))) throw new Error('Inserisci il saldo corretto di tutti i conti elencati.');
+  const accountBalances = expected.map(row => ({ ...row, balanceCents: balances.find(item => item.accountId === row.accountId).balanceCents }));
+  const balanceCents = accountBalances.reduce((sum, item) => sum + item.balanceCents, 0);
+  const entry = { month, balanceCents, note, verifiedAt, accountBalances };
+  cleanMonthlySnapshot(entry);
+  draft.accounts = draft.accounts.map(account => {
+    const row = accountBalances.find(item => item.accountId === account.id);
+    return row && verifiedAt >= account.openingAt ? { ...account, openingCents: row.balanceCents, openingAt: verifiedAt } : account;
+  });
+  return setEntry(draft, entry);
 }
 export function deltaFor(state, month) {
   const current = entryFor(state, month);
@@ -126,6 +171,9 @@ export function balanceReminders(state, today) {
   if (!isDate(today)) throw new Error('La data del promemoria non è valida.');
   const current = today.slice(0, 7);
   const existing = new Set(state.entries.filter(entry => entry.balanceCents !== null).map(entry => entry.month));
+  const active = (state.accounts || []).filter(account => !account.archived);
+  const currentEntry = entryFor(state, current);
+  if (active.length && (!currentEntry.verifiedAt || active.some(account => !currentEntry.accountBalances?.some(item => item.accountId === account.id)))) existing.delete(current);
   const start = state.entries.map(entry => entry.month).filter(month => month <= current).sort()[0] || current;
   const reminders = [];
   const count = monthIndex(current) - monthIndex(start);
@@ -176,14 +224,14 @@ export function stats(state) {
 export function csvFor(state) {
   const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
   const amount = value => value === null ? '' : (value / 100).toFixed(2).replace('.', ',');
-  const rows = [['Data', 'Saldo iniziale (€)', 'Variazione (€)', 'Variazione (%)', 'Nota']];
+  const rows = [['Data', 'Saldo verificato (€)', 'Variazione (€)', 'Variazione (%)', 'Nota']];
   const byMonth = new Map(state.entries.map(entry => [entry.month, entry]));
   for (const entry of state.entries) {
     const previous = monthIndex(entry.month) > 12 ? byMonth.get(shiftMonth(entry.month, -1)) : null;
     const change = entry.balanceCents !== null && previous?.balanceCents != null ? entry.balanceCents - previous.balanceCents : null;
     const rate = change !== null && previous?.balanceCents > 0 ? (100 * change / previous.balanceCents).toFixed(2).replace('.', ',') : '';
     const note = /^[=+@\-\t\r]/.test(entry.note) ? "'" + entry.note : entry.note;
-    rows.push([`01/${entry.month.slice(5)}/${entry.month.slice(0, 4)}`, amount(entry.balanceCents), amount(change), rate, note]);
+    rows.push([entry.verifiedAt ? new Date(entry.verifiedAt).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) : `01/${entry.month.slice(5)}/${entry.month.slice(0, 4)}`, amount(entry.balanceCents), amount(change), rate, note]);
   }
   return '\uFEFF' + rows.map(row => row.map(quote).join(';')).join('\r\n');
 }

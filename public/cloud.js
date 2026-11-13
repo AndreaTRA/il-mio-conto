@@ -46,3 +46,4 @@ export const requireApproved = () => client.requireApproved();
 export const manageAccounts = (id, status) => client.manageAccounts(id, status);
 export const updateProfile = details => client.updateProfile(details);
 export const changeEmail = email => client.changeEmail(email);
+export const walletLinks = (action, accountId) => client.walletLinks(action, accountId);

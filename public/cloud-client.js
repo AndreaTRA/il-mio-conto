@@ -195,8 +195,14 @@ export class CloudClient {
   async writeSnapshot(userId, expectedVersion, payload) {
     const result = await this.request('/rest/v1/rpc/write_conto_snapshot', { method: 'POST', auth: true, userId, body: { p_expected_version: expectedVersion, p_payload: payload } });
     if (result?.status === 'conflict') return { conflict: true };
+    if (result?.status === 'update-required') throw new Error('Aggiorna Flowly: questo archivio contiene conti e transazioni della nuova versione.');
     if (result?.status !== 'ok' || !Number.isSafeInteger(Number(result.version)) || Number(result.version) <= expectedVersion) throw new Error('Conferma del salvataggio online non valida. Riprova senza eliminare i dati locali.');
     return { version: Number(result.version) };
+  }
+  async walletLinks(action = 'list', accountId = null) {
+    const active = await this.session();
+    if (!active) throw new AuthenticationError();
+    return this.request('/rest/v1/rpc/conto_wallet_links', { method: 'POST', auth: true, userId: active.user.id, body: { p_action: action, p_account_id: accountId } });
   }
   async logout() {
     const session = await this.session();

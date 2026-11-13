@@ -23,6 +23,10 @@ Segui [SINCRONIZZAZIONE.md](SINCRONIZZAZIONE.md) per Supabase e [PUBBLICAZIONE.m
 
 Il backup personale dei saldi iniziali si trova in `outputs/saldi-iniziali-da-importare.json` ed è escluso da Git. Importalo dalla web app dopo averla aggiunta alla Home dell’iPhone. Non caricarlo nel repository. Un’app nuova parte con un archivio vuoto: nessun saldo personale è incorporato nel sito pubblico.
 
+## Conti, verifica mensile e Apple Pay
+
+La nuova versione aggiunge conti separati, totale dei saldi, movimenti e collegamenti Apple Pay per carta tramite Comandi Rapidi. Il formato dei backup diventa 3 e continua a leggere i precedenti. La verifica mensile richiede il saldo corretto di ogni conto e conserva dettaglio e totale; l’occhio ricorda l’ultima scelta sul dispositivo. Attivazione e pubblicazione autorizzate dall’utente. I passaggi, i limiti e le verifiche sono in [WALLET.md](WALLET.md). Non pubblicare il nuovo frontend prima di applicare la migrazione.
+
 ## Sviluppo
 
 Occorre Node.js 22 o successivo. Non ci sono dipendenze da installare.

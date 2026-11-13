@@ -83,7 +83,7 @@ test('old 60-month backups migrate without losing actual zero values or notes', 
   old.entries[1].balanceCents = 50000;
   old.entries[10].note = 'Nota senza saldo';
   const migrated = M.validateState(old);
-  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.schemaVersion, 3);
   assert.equal(migrated.entries.length, 3);
   assert.equal(migrated.entries[0].balanceCents, 0);
   assert.equal(migrated.entries[2].note, 'Nota senza saldo');

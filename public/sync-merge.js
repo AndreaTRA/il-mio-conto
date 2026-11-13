@@ -44,10 +44,42 @@ export function mergeArchives(baseInput, localInput, remoteInput, preference = n
       continue;
     }
     const entry = { month };
-    for (const field of ['balanceCents', 'note']) entry[field] = pick(`entries.${month}.${field}`, baseline ? baseline[field] : MISSING, left[field], right[field]);
+    if (baseline?.accountBalances || left.accountBalances || right.accountBalances) {
+      const snapshot = item => item ? { balanceCents: item.balanceCents, ...(item.accountBalances ? { verifiedAt: item.verifiedAt, accountBalances: item.accountBalances } : {}) } : MISSING;
+      Object.assign(entry, pick(`entries.${month}.snapshot`, snapshot(baseline), snapshot(left), snapshot(right)));
+      entry.note = pick(`entries.${month}.note`, baseline ? baseline.note : MISSING, left.note, right.note);
+    } else for (const field of ['balanceCents', 'note']) entry[field] = pick(`entries.${month}.${field}`, baseline ? baseline[field] : MISSING, left[field], right[field]);
     entries.push(entry);
   }
-  return { payload: validateState({ schemaVersion: 2, settings, entries }), conflicts };
+  // Checkpoints are atomic: an amount must always travel with its timestamp.
+  // Movements are merged by immutable identity so simultaneous card payments add up.
+  const mergeRows = (key, fields) => {
+    const maps = [base?.[key] || [], local[key], remote[key]].map(rows => new Map(rows.map(row => [row.id, row])));
+    return [...new Set(maps.flatMap(map => [...map.keys()]))].sort().flatMap(id => {
+      const [baseline, left, right] = maps.map(map => map.get(id));
+      if (same(left, right)) return left ? [left] : [];
+      if (base && same(left, baseline)) return right ? [right] : [];
+      if (base && same(right, baseline)) return left ? [left] : [];
+      if (!base && !left) return [right];
+      if (!base && !right) return [left];
+      if (!left || !right || key === 'transactions') {
+        const selected = pick(`${key}.${id}`, baseline ?? MISSING, left ?? MISSING, right ?? MISSING);
+        return selected === MISSING ? [] : [selected];
+      }
+      const row = { id };
+      for (const field of fields) row[field] = pick(`${key}.${id}.${field}`, baseline?.[field] ?? MISSING, left[field], right[field]);
+      const checkpoint = item => item ? { openingCents: item.openingCents, openingAt: item.openingAt } : MISSING;
+      Object.assign(row, pick(`${key}.${id}.checkpoint`, checkpoint(baseline), checkpoint(left), checkpoint(right)));
+      return [row];
+    });
+  };
+  const accounts = mergeRows('accounts', ['name', 'currency', 'archived']);
+  const transactions = mergeRows('transactions', []);
+  // A deletion/import versus a new payment is a ledger-level conflict, never a silent loss.
+  const orphans = transactions.some(item => !accounts.some(account => account.id === item.accountId));
+  let ledger = { accounts, transactions };
+  if (orphans) ledger = pick('ledger', base ? { accounts: base.accounts, transactions: base.transactions } : MISSING, { accounts: local.accounts, transactions: local.transactions }, { accounts: remote.accounts, transactions: remote.transactions });
+  return { payload: validateState({ schemaVersion: 3, settings, entries, ...ledger }), conflicts };
 }
 export function conflictFingerprint(local, remote, version) {
   return JSON.stringify([validateState(local), validateState(remote), version]);
