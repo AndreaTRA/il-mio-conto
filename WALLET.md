@@ -4,7 +4,7 @@
 
 L’utente ha autorizzato esplicitamente l’attivazione in chat il 13 novembre 2026, inclusi ricezione delle spese tramite codici revocabili e pubblicazione. La precedente richiesta della revisione automatica è quindi risolta. Il frontend richiede la migrazione `supabase/wallet.sql` prima della pubblicazione. La migrazione `wallet_multi_account_monthly_verification` è stata applicata con successo al progetto esistente. Verificati in produzione disponibilità della ricezione, gestione dei codici riservata agli utenti autenticati, tabelle private non leggibili e accettazione del formato 3. I test con account fittizi sono stati mantenuti nel database locale: la revisione automatica ha rifiutato la loro esecuzione in produzione; la verifica online è stata sostituita con controlli senza scritture su account personali.
 
-Sono passati 92 test JavaScript, la build e i test SQL su PostgreSQL 16 locale isolato. Nell’anteprima sono stati provati aggiunta di Fineco e Revolut, movimento associato al conto, totale, conservazione dopo riapertura, privacy, correzione del saldo esatto e guida Apple Pay. Non è comparso scorrimento orizzontale a 320 e 375 px. Il primo pagamento reale deve ancora essere verificato sull’iPhone dell’utente. Non sono stati letti dati bancari o modificati archivi personali remoti.
+Sono passati 97 test JavaScript, la build e i test SQL su PostgreSQL 16 locale isolato. Nell’anteprima sono stati provati aggiunta di Fineco e Revolut, movimento associato al conto, totale, conservazione dopo riapertura, privacy, correzione del saldo esatto e guida Apple Pay. Non è comparso scorrimento orizzontale a 320 e 375 px. Il primo pagamento reale deve ancora essere verificato sull’iPhone dell’utente. Non sono stati letti dati bancari o modificati archivi personali remoti.
 
 ## Comportamento
 
@@ -60,3 +60,11 @@ Snapshot e ricezione usano lo stesso blocco di riga e incrementano la versione. 
 `scripts/wallet-qa.mjs` serve un’anteprima locale alla porta 8793 con dati fittizi e backend simulato. Non contatta Supabase. È escluso dalla build perché solo `public/` viene distribuita. Il codice mostrato nella guida di questa anteprima è fittizio e non autorizza alcun invio reale.
 
 Fonti: [automazioni Transazione di Apple](https://support.apple.com/en-ae/guide/shortcuts/apd65c67538a/ios), [richieste API in Comandi Rapidi](https://support.apple.com/guide/shortcuts/request-your-first-api-apd58d46713f/ios), [formati data](https://support.apple.com/guide/shortcuts/custom-date-formats-apd8d9b19184/ios), [funzioni database Supabase](https://supabase.com/docs/guides/database/functions).
+
+## Correzione sincronizzazione e apertura
+
+Il formato 3, usato dai conti separati, richiede l’aggiornamento dei dispositivi rimasti al formato 2. La nuova versione distingue l’aggiornamento necessario da un backup danneggiato, mantiene l’accesso e i dati locali, permette di ricontrollare gli aggiornamenti e inizializza il service worker anche quando l’archivio locale richiede un’app più recente. L’aggiornamento non cancella IndexedDB o le preferenze. Un nuovo dispositivo con i vecchi valori iniziali ma senza dati scarica l’archivio effettivo senza creare un conflitto fittizio sull’obiettivo.
+
+Apertura, accesso e ricaricamento tornano su Panoramica; un conflitto resta segnalato con un collegamento esplicito alla sincronizzazione. Il riquadro principale mostra il saldo totale aggiornato di tutti i conti inclusi. Anche obiettivo e piano mensile usano quel totale; variazioni e grafico rimangono riferiti allo storico mensile. L’avviso “Inizia con i tuoi dati” non compare quando esistono conti o la sincronizzazione è interrotta.
+
+Per il proprietario è stata confrontata una copia privata dell’archivio online con il backup iniziale: tutti i saldi originari sono già presenti, insieme ai dati aggiunti in seguito. Non è stato sovrascritto o reinserito alcun importo personale; la copia di verifica rimane esclusa da Git e dalla build.

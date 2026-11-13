@@ -19,7 +19,7 @@ export function takeRedirectSession() {
   const fragment = location.hash, params = new URLSearchParams(fragment.slice(1));
   if (!['access_token', 'refresh_token', 'error', 'error_description'].some(name => params.has(name))) return Promise.resolve(null);
   // Remove credentials before any network call, render or browser history entry.
-  history.replaceState(null, '', location.pathname + location.search + '#backup');
+  history.replaceState(null, '', location.pathname + location.search + '#panoramica');
   return client.sessionFromRedirect(fragment);
 }
 export const session = () => client.session();
@@ -34,7 +34,7 @@ export async function initializeCloud({ initialize = true } = {}) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cloud.trigger(); });
   let retryAfter = 0;
   setInterval(() => {
-    if (document.visibilityState !== 'visible' || !navigator.onLine || ['signed-out', 'not-configured', 'ready-to-link'].includes(cloud.status.phase)) return;
+    if (document.visibilityState !== 'visible' || !navigator.onLine || ['signed-out', 'not-configured', 'ready-to-link', 'update-required'].includes(cloud.status.phase)) return;
     if (Date.now() < retryAfter) return;
     retryAfter = Date.now() + (cloud.status.phase === 'error' ? 15000 : 3000);
     cloud.trigger();

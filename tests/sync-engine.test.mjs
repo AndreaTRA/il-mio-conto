@@ -140,3 +140,29 @@ test('idle sync checks do not request a financial rerender',async()=>{
  const notifications=[];app.engine.onChange=state=>notifications.push(state);
  await app.engine.trigger();assert.ok(notifications.every(state=>!state.dataChanged));assert.ok(notifications.every(state=>state.phase!=='syncing'));
 });
+test('a newer archive requests an app update without deleting local data or signing out', async () => {
+  const server = new Server(), app = device(server, put(emptyState(), '2026-11', 123400));
+  await app.engine.activate();
+  const before = await app.store.load(), writes = server.writes;
+  server.payload = { ...server.payload, schemaVersion: 99 }; server.version++;
+  await app.engine.trigger();
+  assert.equal(app.engine.status.phase, 'update-required');
+  assert.equal(app.engine.status.updateRequired, true);
+  assert.match(app.engine.status.error, /Aggiorna Flowly/);
+  assert.deepEqual(await app.store.load(), before);
+  assert.equal(server.writes, writes);
+  assert.ok(await app.client.session());
+});
+test('a new device with legacy default settings pulls the real archive and its accounts', async () => {
+  const server = new Server();
+  const real = put(emptyState(), '2026-11', 123400);
+  real.settings = { targetCents: 5000000, deadline: '2028-12-31' };
+  real.accounts = [{ id:'11111111-1111-4111-8111-111111111111', name:'Conto', openingCents:123400, openingAt:'2026-11-01T00:00:00.000Z', currency:'EUR', archived:false }];
+  server.payload = real; server.version = 6;
+  const local = { schemaVersion: 2, settings: { targetCents:5000000, deadline:'2030-12-31' }, entries:[] };
+  const phone = device(server, local);
+  await phone.engine.initialize({ autoLink:true });
+  assert.equal(phone.engine.status.phase,'synced');
+  assert.ok(samePayload(await phone.store.load(),real));
+  assert.equal(server.writes,0);
+});

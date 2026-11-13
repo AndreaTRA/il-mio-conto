@@ -72,3 +72,15 @@ test('conflicting monthly verifications keep their breakdown and total together'
  assert.equal(selected.entries[0].balanceCents,330000);
  assert.equal(selected.entries[0].accountBalances[1].balanceCents,80000);
 });
+test('the overview total and goal forecast include every active account and new card payments',()=>{
+ let state=base();state.settings={targetCents:1000000,deadline:'2026-12-31'};
+ state=M.setEntry(state,{month:'2026-11',balanceCents:200000,note:'Solo saldo storico'});
+ let plan=M.goalPlan(state,'2026-11-13');
+ assert.equal(plan.balanceCents,250000);assert.equal(plan.usesAccounts,true);assert.equal(plan.accountCount,2);
+ assert.equal(plan.monthlyCents,375000);
+ state=L.addTransaction(state,{id:crypto.randomUUID(),accountId:ids[0],amountCents:-500,occurredAt:'2026-11-13T13:00:00.000Z',merchant:'POS',source:'apple-pay',voided:false});
+ plan=M.goalPlan(state,'2026-11-13');assert.equal(plan.balanceCents,249500);assert.equal(plan.missingCents,750500);
+ state=L.setAccount(state,{...accounts[1],archived:true});
+ assert.equal(M.goalPlan(state,'2026-11-13').balanceCents,199500);
+ assert.equal(state.entries[0].balanceCents,200000);
+});

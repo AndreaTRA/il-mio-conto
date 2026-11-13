@@ -1,6 +1,6 @@
 import * as Model from './model.js';
 import * as Storage from './storage.js';
-import { initializePwa, isInstalled } from './pwa.js';
+import { initializePwa, checkForAppUpdate, isInstalled } from './pwa.js';
 import { cloud, onCloudChange, initializeCloud, sendCode, verifyCode, verifyEmailLink, takeRedirectSession, acceptRedirectSession, session, signIn, requestPasswordRecovery, verifyRecoveryLink, resetPassword, register, requireApproved, manageAccounts, updateProfile, changeEmail } from './cloud.js';
 import { samePayload, sameIdentity } from './sync-merge.js';
 import { createAuthUi } from './auth-ui.js';
@@ -93,15 +93,19 @@ async function openAuthenticatedArchive() {
   numbersVisible = (await Storage.readMeta('numbers-visible:' + active.user.id)) === true;
   accessGranted = true;
   authUi.hide(); $('#app-shell').hidden = false;
-  if (cloud.status.phase === 'conflict') location.hash = 'backup';
+  history.replaceState(null, '', location.pathname + location.search + '#panoramica');
   render(); setStatus();
 }
 function setStatus() {
   const badge = $('#connection');
   const phase = cloud.status.phase;
-  const syncLabels = { syncing: 'Sincronizzazione…', synced: 'Sincronizzato', pending: 'Modifiche in attesa', conflict: 'Valori da verificare', error: 'Sincronizzazione interrotta' };
+  const syncLabels = { syncing: 'Sincronizzazione…', synced: 'Sincronizzato', pending: 'Modifiche in attesa', conflict: 'Valori da verificare', error: 'Sincronizzazione interrotta', 'update-required': 'Aggiornamento necessario' };
   badge.textContent = !navigator.onLine ? 'Offline · invio in attesa' : syncLabels[phase] || 'Online · collegamento account';
-  badge.classList.toggle('offline', !navigator.onLine || ['pending', 'conflict', 'error'].includes(phase));
+  badge.classList.toggle('offline', !navigator.onLine || ['pending', 'conflict', 'error', 'update-required'].includes(phase));
+  const syncNotice = $('#sync-notice');
+  syncNotice.hidden = !['conflict', 'error', 'update-required'].includes(phase);
+  if (!syncNotice.hidden) syncNotice.innerHTML = phase === 'update-required' ? 'Aggiorna Flowly su questo dispositivo per leggere i conti sincronizzati. I dati sono conservati.' : phase === 'conflict' ? 'Ci sono dati da confrontare. <a class="button plain" href="#backup">Controlla la sincronizzazione →</a>' : 'La sincronizzazione richiede attenzione. <a class="button plain" href="#backup">Vedi dettagli →</a>';
+  if (phase === 'update-required') { $('#update-message').textContent = 'Aggiornamento necessario per sincronizzare i tuoi conti. I dati restano conservati.'; $('#update-banner').hidden = false; }
   const banner = $('#offline-banner'); banner.hidden = navigator.onLine;
   banner.textContent = state?.sync ? 'Sei offline. I saldi restano sul dispositivo e saranno sincronizzati quando l’app torna online.' : 'Sei offline. Puoi continuare a registrare saldi e note su questo dispositivo.';
   $('#saved-state').textContent = state?.updatedAt
@@ -121,7 +125,7 @@ function heading(eyebrow, title, description, action = '') {
 function neededNote(summary) {
   const plan = summary.plan;
   if (needsGoalSetup()) return 'Imposta importo e scadenza per calcolare il piano.';
-  if (!plan.last) return 'Aggiungi un saldo riferito a oggi o a un mese precedente.';
+  if (plan.balanceCents === null) return 'Aggiungi un saldo riferito a oggi o a un mese precedente.';
   if (plan.missingCents === 0) return 'Obiettivo raggiunto con l’ultimo saldo disponibile.';
   if (plan.deadlinePassed) return 'Scadenza superata. Puoi scegliere una nuova data.';
   return `${plan.monthsLeft} versamenti, da ${monthLabel(plan.today.slice(0, 7))}, incluso il mese in corso.`;
@@ -141,7 +145,7 @@ function goalPanel(summary) {
 }
 function savingsPanel(summary) {
   const plan = summary.plan;
-  return `<section class="panel savings-panel" aria-labelledby="savings-card-title"><p class="panel-label" id="savings-card-title">Da mettere da parte</p><p class="savings-value">${money(plan.monthlyCents)}<span> / mese</span></p><p class="savings-detail">${neededNote(summary)}</p><p class="savings-basis">Calcolo al ${dateLabel(plan.today)}${plan.last ? `<br>Saldo di riferimento: ${entryAsOf(plan.last)}` : ''}. Nessun rendimento ipotizzato.</p></section>`;
+  return `<section class="panel savings-panel" aria-labelledby="savings-card-title"><p class="panel-label" id="savings-card-title">Da mettere da parte</p><p class="savings-value">${money(plan.monthlyCents)}<span> / mese</span></p><p class="savings-detail">${neededNote(summary)}</p><p class="savings-basis">Calcolo al ${dateLabel(plan.today)}${plan.usesAccounts ? '<br>Riferimento: totale aggiornato dei conti' : plan.last ? `<br>Saldo di riferimento: ${entryAsOf(plan.last)}` : ''}. Nessun rendimento ipotizzato.</p></section>`;
 }
 function row(entry, withNotes = false) {
   const delta = Model.deltaFor(state, entry.month);
@@ -203,9 +207,9 @@ function chart(summary) {
   return `<section class="panel chart-panel"><div class="section-top"><div><h2>Come sta andando</h2><p>Il saldo nel tempo, verso il tuo obiettivo.</p></div><label class="sr-only" for="chart-year">Periodo del grafico</label><select id="chart-year" class="filter">${years.map(year => `<option value="${year}" ${chartYear === String(year) ? 'selected' : ''}>${year}</option>`).join('')}<option value="all" ${all ? 'selected' : ''}>Tutto lo storico</option></select></div><div class="chart-wrap">${svg}</div><div class="chart-legend"><span><i class="legend-stroke"></i>Saldo del conto</span><span><i class="legend-stroke target"></i>Obiettivo</span></div></section>`;
 }
 function overview(summary) {
-  const onboarding = summary.recorded.length ? '' : `<section class="notice onboarding"><strong>Inizia con i tuoi dati</strong><p>Su iPhone aggiungi prima l’app alla Home, aprila dall’icona e importa il backup dei saldi. I saldi importati si sincronizzano con il tuo account.</p><button class="button secondary" data-action="import">Importa backup</button></section>`;
-  return heading('PANORAMICA', 'Tutto sotto controllo.', summary.last ? `Situazione al ${summary.last.verifiedAt ? new Date(summary.last.verifiedAt).toLocaleDateString('it-IT') : entryAsOf(summary.last)}.` : 'Registra i tuoi saldi, mese dopo mese.', addButton()) + onboarding +
-    `<div class="summary-grid"><div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">Saldo registrato</p><p class="balance-value">${!numbersVisible ? concealed : summary.last ? esc((summary.last.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.last ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">Storico mensile</span></div></section>${goalPanel(summary)}${savingsPanel(summary)}</div>
+  const onboarding = summary.recorded.length || state.accounts.length || ['syncing', 'error', 'conflict', 'update-required'].includes(cloud.status.phase) ? '' : `<section class="notice onboarding"><strong>Inizia con i tuoi dati</strong><p>Su iPhone aggiungi prima l’app alla Home, aprila dall’icona e importa il backup dei saldi. I saldi importati si sincronizzano con il tuo account.</p><button class="button secondary" data-action="import">Importa backup</button></section>`;
+  return heading('PANORAMICA', 'Tutto sotto controllo.', summary.plan.usesAccounts ? 'Il totale aggiornato di tutti i tuoi conti e attività.' : summary.last ? `Situazione al ${entryAsOf(summary.last)}.` : 'Registra i tuoi saldi, mese dopo mese.', addButton()) + onboarding +
+    `<div class="summary-grid"><div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">${summary.plan.usesAccounts ? 'Saldo totale' : 'Saldo registrato'}</p><p class="balance-value">${!numbersVisible ? concealed : summary.plan.balanceCents !== null ? esc((summary.plan.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.plan.balanceCents !== null ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.plan.usesAccounts ? `${summary.plan.accountCount} ${summary.plan.accountCount === 1 ? 'conto incluso' : 'conti inclusi'}` : summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">${summary.plan.usesAccounts ? 'Conti e attività' : 'Storico mensile'}</span></div></section>${goalPanel(summary)}${savingsPanel(summary)}</div>
     ${statsMarkup(summary)}</div>${accountsUi.markup(false)}${chart(summary)}<section class="panel table-panel"><div class="table-intro"><div><h2>Gli ultimi saldi</h2><p>Il totale dei conti verificato ogni mese.</p></div><a class="button plain" href="#saldi">Vedi tutti →</a></div>${summary.recorded.length ? monthlyTable(summary.recorded.slice(-4).reverse()) : '<p class="empty-state">Nessun saldo registrato.</p>'}</section>`;
 }
 function balances() {
@@ -222,14 +226,14 @@ function goal(summary) {
   if (needsGoalSetup()) return goalSetup();
   const text = neededNote(summary);
   return heading('IL TUO TRAGUARDO', 'Obiettivo', 'Scegli importo e scadenza. Puoi aggiornarli nel tempo.') +
-    `<div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano l’ultimo saldo disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="${numbersVisible ? 'text' : 'password'}" autocomplete="off" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">DA RISPARMIARE DA OGGI</p><p class="big-needed">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Calcolo al ${dateLabel(summary.plan.today)}, con un versamento anche nel mese in corso. Nessun rendimento futuro viene ipotizzato.</p></section></div>
+    `<div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano il totale aggiornato dei conti; se non hai ancora conti, l’ultimo saldo mensile disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="${numbersVisible ? 'text' : 'password'}" autocomplete="off" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">DA RISPARMIARE DA OGGI</p><p class="big-needed">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Calcolo al ${dateLabel(summary.plan.today)}, con un versamento anche nel mese in corso. Nessun rendimento futuro viene ipotizzato.</p></section></div>
     <section class="panel table-panel"><div class="table-intro"><div><h2>Anno per anno</h2><p>Dal primo all’ultimo saldo disponibile nell’anno.</p></div></div>${summary.annual.length ? `<div class="table-scroll"><table><thead><tr><th>Anno</th><th class="amount">Mesi registrati</th><th class="amount">Ultimo saldo</th><th class="amount">Variazione nell’anno</th></tr></thead><tbody>${summary.annual.map(annual => `<tr><td>${annual.year}</td><td class="amount">${annual.count}</td><td class="amount">${money(annual.last)}</td><td class="amount ${color(annual.change)}">${signed(annual.change)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Gli anni appariranno con i primi saldi.</p>'}<p class="info-caption">${summary.up} mesi in crescita · ${summary.down} in decrescita · ${summary.stable} stabili · ${summary.over} saldi pari o superiori all’obiettivo.</p></section>`;
 }
 function cloudMarkup() {
   const status = cloud.status;
   if (status.phase === 'not-configured') return `<section id="cloud-panel" class="panel backup-panel wide"><h2>Sincronizzazione automatica</h2><p>Il collegamento a Supabase deve ancora essere configurato. Dopo l’attivazione potrai accedere con la stessa email su telefono e computer.</p>${status.error ? `<p class="form-error">${esc(status.error)}</p>` : ''}<p class="local-note">I dati locali e i backup continuano a funzionare.</p></section>`;
   if (status.phase === 'signed-out') return `<section id="cloud-panel" class="panel backup-panel wide"><h2>Accesso personale</h2><p>Accedi con la stessa email sui due dispositivi. Supabase invia un link di accesso; se hai configurato il codice email puoi usare anche quello. L’archivio online sarà riservato al tuo utente.</p><form id="cloud-email-form"><label for="cloud-email">Email</label><div class="form-inline"><input id="cloud-email" type="email" autocomplete="username" value="${esc(pendingEmail || status.email || '')}" required><button class="button primary" type="submit">Invia email di accesso</button></div></form>${pendingEmail ? `<form id="cloud-code-form"><label for="cloud-code">Codice numerico, se presente nell’email</label><div class="form-inline"><input id="cloud-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{6,10}" required><button class="button primary" type="submit">Accedi</button></div></form>` : ''}<p>Su iPhone dalla Home: tieni premuto il link nell’email, copialo e incollalo qui senza aprirlo. L’accesso resterà nell’app.</p><form id="cloud-link-form"><label for="cloud-link">Link ricevuto via email</label><input id="cloud-link" type="password" autocomplete="off" spellcheck="false" required><button class="button secondary" type="submit">Accedi con il link</button></form><p id="cloud-login-error" class="form-error" role="alert">${esc(status.error)}</p></section>`;
-  const labels = { 'ready-to-link': 'Collega il tuo archivio', syncing: 'Sincronizzazione in corso', synced: 'Archivio sincronizzato', pending: 'Modifiche in attesa', conflict: 'Controlla i valori in conflitto', error: 'Sincronizzazione interrotta' };
+  const labels = { 'ready-to-link': 'Collega il tuo archivio', syncing: 'Sincronizzazione in corso', synced: 'Archivio sincronizzato', pending: 'Modifiche in attesa', conflict: 'Controlla i valori in conflitto', error: 'Sincronizzazione interrotta', 'update-required': 'Aggiornamento necessario' };
   const conflicts = status.conflict?.fields || [];
   const valueLabel = (value, path) => path === 'settings' ? (value?.targetCents === null ? 'Obiettivo da impostare' : `${money(value.targetCents)} · ${value.deadline}`) : value === null ? 'Eliminato o vuoto' : path.endsWith('Cents') ? money(value) : typeof value === 'object' ? value.accounts ? `${value.accounts.length} conti · ${value.transactions.length} movimenti` : value.openingCents !== undefined ? `${value.name || 'Saldo verificato'} · ${money(value.openingCents)} · ${value.openingAt}` : value.amountCents !== undefined ? `${value.merchant} · ${money(value.amountCents)} · ${value.voided ? 'Annullato' : 'Attivo'}` : `${money(value.balanceCents)} · ${value.note || 'Nessuna nota'}` : String(value);
   const fieldLabel = path => path === 'ledger' ? 'Conti e movimenti' : path.startsWith('accounts.') ? `Conto ${state.accounts.find(a => a.id === path.split('.')[1])?.name || 'modificato'} · ${path.endsWith('checkpoint') ? 'saldo verificato' : path.endsWith('name') ? 'nome' : path.endsWith('archived') ? 'inclusione nel totale' : 'dati'}` : path.startsWith('transactions.') ? 'Movimento del conto' : path === 'settings' ? 'Obiettivo' : path === 'settings.reminderDay' ? 'Giorno del promemoria' : path === 'settings.targetCents' ? 'Importo obiettivo' : path === 'settings.deadline' ? 'Scadenza obiettivo' : `${monthLabel(path.split('.')[1])}${path.endsWith('.note') ? ' · nota' : ' · saldo'}`;
@@ -362,6 +366,8 @@ function render() {
   visibilityButton.setAttribute('aria-pressed', String(numbersVisible));
   visibilityButton.classList.toggle('revealed', numbersVisible);
   const summary = Model.stats(state); summary.plan = Model.goalPlan(state, todayDate()); planDate = summary.plan.today;
+  summary.gap = summary.plan.missingCents;
+  summary.progress = Model.hasGoal(state) && summary.plan.balanceCents !== null ? summary.plan.balanceCents / state.settings.targetCents : null;
   summary.reminders = Model.balanceReminders(state, planDate);
   updateNotificationBadge(summary.reminders);
   if (accountProfile?.is_admin && managedUsers === null && !usersLoading && !usersError) queueMicrotask(loadUsers);
@@ -534,8 +540,14 @@ $('#import-file').addEventListener('change', async event => {
   } catch (error) { toast(error instanceof SyntaxError ? 'Il file non contiene un backup JSON leggibile.' : error.message, true); }
 });
 $('#apply-update').addEventListener('click', async () => {
-  if (document.querySelector('dialog[open]')) { toast('Salva o chiudi la modifica in corso prima di aggiornare.'); return; }
-  if (activateUpdate && await confirmAction('Aggiornare l’app?', 'I dati già salvati resteranno sul dispositivo.', 'Aggiorna')) activateUpdate();
+  if (hasPendingUiEdit()) { toast('Salva o chiudi la modifica in corso prima di aggiornare.'); return; }
+  const button = $('#apply-update'); button.disabled = true;
+  try {
+    if (!activateUpdate) await checkForAppUpdate();
+    if (activateUpdate) activateUpdate();
+    else toast('Controllo aggiornamenti. Attendi qualche secondo e ripremi Aggiorna app. Non cancellare i dati del sito.');
+  } catch { toast('Connettiti a internet e riprova ad aggiornare. I dati locali sono conservati.', true); }
+  finally { button.disabled = false; }
 });
 content.addEventListener('submit', async event => {
   if (!['cloud-email-form', 'cloud-code-form', 'cloud-link-form'].includes(event.target.id)) return;
@@ -569,10 +581,10 @@ onCloudChange(async update => {
 });
 document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible') { if (route() === 'account') refreshProfile(); loadUsers(); } if (state && document.visibilityState === 'visible' && !hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
 try {
+  initializePwa({ onStatus: status => { pwaStatus = status; setStatus(); if (route() === 'backup' && !hasPendingUiEdit()) render(); }, onUpdate: activate => { activateUpdate = activate; $('#update-banner').hidden = false; } });
   state = await Storage.load(); const last = Model.stats(state).last;
   if (last) { tableYear = Number(last.month.slice(0, 4)); chartYear = String(tableYear); }
   render(); setStatus();
-  initializePwa({ onStatus: status => { pwaStatus = status; setStatus(); if (route() === 'backup' && !hasPendingUiEdit()) render(); }, onUpdate: activate => { activateUpdate = activate; $('#update-banner').hidden = false; } });
   let recovering = false, accessError = '';
   try {
     const incoming = await incomingAccess;
@@ -585,7 +597,9 @@ try {
   if (!recovering && await session()) await openAuthenticatedArchive();
   else { lockAccess(); if (accessError) authUi.message(accessError, true); }
 } catch (error) {
-  lockAccess(); authUi.message(error.message + ' I dati locali non sono stati sostituiti.', true);
+  lockAccess();
+  if (error.updateRequired) { $('#update-message').textContent = error.message; $('#update-banner').hidden = false; }
+  authUi.message(error.message + ' I dati locali non sono stati sostituiti.', true);
   content.setAttribute('aria-busy', 'false'); content.replaceChildren();
   const panel = document.createElement('section'); panel.className = 'notice';
   const message = document.createElement('p'); message.textContent = `Non posso aprire l’archivio: ${error.message} I dati esistenti non sono stati sostituiti.`;

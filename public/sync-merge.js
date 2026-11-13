@@ -4,7 +4,11 @@ export const samePayload = (a, b) => JSON.stringify(validateState(a)) === JSON.s
 export const sameIdentity = (a, b) => Boolean(a && b && a.projectUrl === b.projectUrl && a.userId === b.userId);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const MISSING = Symbol('missing');
-const isBlank = payload => samePayload(payload, emptyState());
+const isBlank = payload => samePayload(payload, emptyState()) || (
+  payload.entries.length === 0 && payload.accounts.length === 0 && payload.transactions.length === 0 &&
+  payload.settings.targetCents === 5000000 && payload.settings.deadline === '2030-12-31' &&
+  payload.settings.goalChosen !== true && (payload.settings.reminderDay ?? 1) === 1
+);
 
 /** Three-way merge. Missing months are deletions only when a shared base exists. */
 export function mergeArchives(baseInput, localInput, remoteInput, preference = null) {

@@ -1,6 +1,9 @@
 /** Pure domain logic. Monetary values are integer cents; missing is null. */
-import { validateLedger, isInstant } from './ledger.js';
+import { validateLedger, isInstant, totalBalance } from './ledger.js';
 export const SCHEMA_VERSION = 3;
+export class ArchiveUpdateRequiredError extends Error {
+  constructor() { super('Aggiorna Flowly su questo dispositivo per leggere i conti sincronizzati. I tuoi dati sono conservati.'); this.updateRequired = true; }
+}
 export const DEFAULT_SETTINGS = Object.freeze({ targetCents: null, deadline: null });
 const MAX_CENTS = 100_000_000_000;
 
@@ -72,6 +75,7 @@ function cleanMonthlySnapshot(entry) {
 }
 /** Accepts old 60-month backups, discarding only their empty placeholder rows. */
 export function validateState(raw) {
+  if (Number.isInteger(raw?.schemaVersion) && raw.schemaVersion > SCHEMA_VERSION) throw new ArchiveUpdateRequiredError();
   if (!raw || ![1, 2, 3].includes(raw.schemaVersion)) throw new Error('Il file non è un backup compatibile con Flowly. Aggiorna l’app se necessario.');
   const target = raw.settings?.targetCents, deadline = raw.settings?.deadline;
   const unset = target === null && deadline === null;
@@ -151,10 +155,13 @@ export function remainingMonths(month, deadline) {
 export function goalPlan(state, today) {
   if (!isDate(today)) throw new Error('La data di calcolo non è valida.');
   const last = state.entries.filter(entry => entry.balanceCents !== null && entry.month <= today.slice(0, 7)).sort((a, b) => a.month.localeCompare(b.month)).at(-1) || null;
-  if (!hasGoal(state)) return { today, last, monthsLeft: null, missingCents: null, monthlyCents: null, deadlinePassed: false };
+  const accountCount = (state.accounts || []).filter(account => !account.archived).length;
+  const usesAccounts = accountCount > 0;
+  const balanceCents = usesAccounts ? totalBalance(state) : last?.balanceCents ?? null;
+  if (!hasGoal(state)) return { today, last, balanceCents, usesAccounts, accountCount, monthsLeft: null, missingCents: null, monthlyCents: null, deadlinePassed: false };
   const monthsLeft = today > state.settings.deadline ? 0 : remainingMonths(today.slice(0, 7), state.settings.deadline);
-  const missingCents = last ? Math.max(0, state.settings.targetCents - last.balanceCents) : null;
-  return { today, last, monthsLeft, missingCents,
+  const missingCents = balanceCents === null ? null : Math.max(0, state.settings.targetCents - balanceCents);
+  return { today, last, balanceCents, usesAccounts, accountCount, monthsLeft, missingCents,
     monthlyCents: missingCents === null ? null : missingCents === 0 ? 0 : monthsLeft ? Math.ceil(missingCents / monthsLeft) : null,
     deadlinePassed: today > state.settings.deadline && missingCents !== null && missingCents > 0 };
 }

@@ -36,7 +36,7 @@ export class SyncEngine {
     this.running = Promise.resolve().then(() => this.lock ? this.lock(run) : run()).catch(async error => {
       if (generation !== this.generation) return;
       if (error.authRequired) await this.client.forgetSession?.();
-      this.emit({ phase: error.authRequired ? 'signed-out' : this.online() ? 'error' : 'pending', error: error.message });
+      this.emit({ phase: error.updateRequired ? 'update-required' : error.authRequired ? 'signed-out' : this.online() ? 'error' : 'pending', error: error.message, updateRequired: error.updateRequired === true });
     }).finally(() => { this.running = null; });
     return this.running;
   }
