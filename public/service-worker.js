@@ -7,13 +7,28 @@ ASSETS.push('auth-ui.js', 'auth.css', 'goals.css', 'notifications.css', 'privacy
 ASSETS.push('flowly-icon.svg', 'flowly-icon-180.png', 'flowly-icon-192.png', 'flowly-icon-512.png');
 const urls = ASSETS.map(asset => new URL(asset, self.registration.scope).href);
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls.map(url => new Request(url, { cache: 'reload' })))));
+  // Activate only after the entire new app is cached. Legacy clients may never
+  // show an update button, so keeping this worker waiting strands them on v2.
+  // Activation itself does not reload pages or touch financial data.
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls.map(url => new Request(url, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.filter(key => key.startsWith(PREFIX) && key !== CACHE).map(key => caches.delete(key)));
     await self.clients.claim();
+    // Only the explicit repair link authorizes a navigation. Other open pages
+    // keep their forms and drafts until the user chooses to reload them.
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const base = new URL(self.registration.scope);
+    for (const client of clients) {
+      const url = new URL(client.url);
+      if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname) || url.searchParams.get('aggiorna') !== '1') continue;
+      const destination = new URL('./', base); destination.hash = 'panoramica';
+      // Do not await navigation from the activation event: its fetch may
+      // itself wait for activation, especially on WebKit.
+      client.navigate(destination.href).catch(() => {});
+    }
   })());
 });
 self.addEventListener('message', event => {

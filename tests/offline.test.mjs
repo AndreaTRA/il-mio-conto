@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-async function worker() {
+async function worker({ clients = [], cacheFailure = false } = {}) {
   const handlers = new Map(), stores = new Map(); let claimed = false, skipped = false;
   const scope = 'https://example.github.io/il-mio-conto/';
   const key = (request, ignoreSearch = false) => { const url = new URL(typeof request === 'string' ? request : request.url); if (ignoreSearch) url.search = ''; return url.href; };
@@ -11,11 +11,11 @@ async function worker() {
     async open(name) {
       if (!stores.has(name)) stores.set(name, new Map());
       const data = stores.get(name);
-      return { async addAll(urls) { for (const request of urls) { const url = key(request); data.set(url, new Response('cached:' + url)); } }, async match(request, options = {}) { return data.get(key(request, options.ignoreSearch))?.clone(); } };
+      return { async addAll(urls) { if (cacheFailure) throw new Error('Incomplete download'); for (const request of urls) { const url = key(request); data.set(url, new Response('cached:' + url)); } }, async match(request, options = {}) { return data.get(key(request, options.ignoreSearch))?.clone(); } };
     },
     async keys() { return [...stores.keys()]; }, async delete(name) { return stores.delete(name); }
   };
-  const self = { registration: { scope }, addEventListener(name, fn) { handlers.set(name, fn); }, clients: { async claim() { claimed = true; } }, skipWaiting() { skipped = true; } };
+  const self = { registration: { scope }, addEventListener(name, fn) { handlers.set(name, fn); }, clients: { async claim() { claimed = true; }, async matchAll() { return clients; } }, skipWaiting() { skipped = true; } };
   vm.runInNewContext((await fs.readFile(new URL('../public/service-worker.js', import.meta.url), 'utf8')).replace('__APP_VERSION__', 'test-version'), { self, caches, URL, Request, fetch: async () => { throw new Error('offline'); } });
   return { scope, stores, handlers, caches, get claimed() { return claimed; }, get skipped() { return skipped; } };
 }
@@ -43,7 +43,7 @@ test('activation deletes only old app-shell caches within this exact app scope',
   assert.equal(app.stores.has('conto-shell:/another-app/:old'), true);
   assert.equal(app.stores.has('private-user-data'), true);
   assert.equal(app.claimed, true);
-  assert.equal(app.skipped, false);
+  assert.equal(app.skipped, true);
   app.handlers.get('message')({ data: { type: 'ACTIVATE_UPDATE' } });
   assert.equal(app.skipped, true);
 });
@@ -64,4 +64,36 @@ test('every precached asset exists and all app imports stay within the site', as
     const text = await fs.readFile(new URL('../public/' + name, import.meta.url), 'utf8');
     for (const match of text.matchAll(/from\s+['"]([^'"]+)['"]/g)) assert.ok(match[1].startsWith('./'));
   }
+});
+test('an explicit recovery link reloads a legacy client after activation and leaves editing pages alone', async () => {
+ const navigations=[];
+ const client=url=>({url,async navigate(destination){navigations.push([url,destination]);}});
+ const recovery=client('https://example.github.io/il-mio-conto/?aggiorna=1#backup');
+ const normal=client('https://example.github.io/il-mio-conto/#saldi');
+ const other=client('https://example.github.io/other/?aggiorna=1');
+ const app=await worker({clients:[recovery,normal,other]});
+ let install,activation;
+ app.handlers.get('install')({waitUntil(p){install=p;}});await install;
+ assert.equal(app.skipped,true);
+ app.handlers.get('activate')({waitUntil(p){activation=p;}});await activation;
+ assert.deepEqual(navigations,[[recovery.url,'https://example.github.io/il-mio-conto/#panoramica']]);
+});
+test('an incomplete new cache does not activate or discard the previously working app',async()=>{
+ const app=await worker({cacheFailure:true});
+ await app.caches.open('conto-shell:/il-mio-conto/:old');
+ let install;
+ app.handlers.get('install')({waitUntil(p){install=p;}});
+ await assert.rejects(install,/Incomplete download/);
+ assert.equal(app.skipped,false);
+ assert.equal(app.stores.has('conto-shell:/il-mio-conto/:old'),true);
+});
+test('recovery activation completes even while the requested navigation is still waiting to load',async()=>{
+ let destination;
+ const client={url:'https://example.github.io/il-mio-conto/?aggiorna=1#backup',navigate(url){destination=url;return new Promise(()=>{});}};
+ const app=await worker({clients:[client]});
+ let activation;
+ app.handlers.get('activate')({waitUntil(p){activation=p;}});
+ await activation;
+ assert.equal(destination,'https://example.github.io/il-mio-conto/#panoramica');
+ assert.equal(app.claimed,true);
 });

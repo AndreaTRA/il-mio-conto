@@ -27,7 +27,7 @@ test('installing an update bypasses stale HTTP cache for every offline asset', a
   const handlers = new Map(); let requests;
   vm.runInNewContext(source, {
     URL, Request,
-    self: { registration: { scope: 'https://example.com/flowly/' }, addEventListener: (name, callback) => handlers.set(name, callback) },
+    self: { skipWaiting() {}, registration: { scope: 'https://example.com/flowly/' }, addEventListener: (name, callback) => handlers.set(name, callback) },
     caches: { open: async () => ({ addAll: async items => { requests = items; } }) }
   });
   let installation;

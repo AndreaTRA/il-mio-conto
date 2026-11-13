@@ -16,6 +16,7 @@ export async function initializePwa({ onStatus, onUpdate }) {
   try {
     const registration = await navigator.serviceWorker.register('./service-worker.js', { scope: './', updateViaCache: 'none' });
     activeRegistration = registration;
+    const hadController = Boolean(navigator.serviceWorker.controller);
     let reloadRequested = false;
     const offerUpdate = () => {
       if (registration.waiting && navigator.serviceWorker.controller) onUpdate(() => { reloadRequested = true; registration.waiting?.postMessage({ type: 'ACTIVATE_UPDATE' }); });
@@ -26,7 +27,15 @@ export async function initializePwa({ onStatus, onUpdate }) {
       const worker = registration.installing;
       worker?.addEventListener('statechange', () => { if (worker.state === 'installed') offerUpdate(); });
     });
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloadRequested) window.location.reload(); else onStatus('offline-ready'); });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloadRequested) window.location.reload();
+      else {
+        onStatus('offline-ready');
+        // The worker is already active, so the remaining action is just a
+        // guarded page reload, not another message to a waiting worker.
+        if (hadController) onUpdate(() => window.location.reload());
+      }
+    });
     await navigator.serviceWorker.ready;
     onStatus('offline-ready');
   } catch { onStatus('online-only'); }

@@ -25,3 +25,19 @@ test('checking an update activates the waiting app and reloads without clearing 
   assert.ok(statuses.includes('offline-ready'));
  } finally {for(const key of Object.keys(original)){if(original[key])Object.defineProperty(globalThis,key,original[key]);else delete globalThis[key];}}
 });
+test('an automatically activated update offers a reload without reloading an editing page',async()=>{
+ const original=Object.fromEntries(['navigator','window','location'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+ const events={};let reloads=0,activate;
+ const registration={waiting:null,update:async()=>{},addEventListener(){}};
+ try {
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{serviceWorker:{controller:{},register:async()=>registration,ready:Promise.resolve(registration),addEventListener:(name,listener)=>{events[name]=listener;}}}});
+  Object.defineProperty(globalThis,'window',{configurable:true,value:{isSecureContext:true,location:{reload(){reloads++;}}}});
+  Object.defineProperty(globalThis,'location',{configurable:true,value:{href:'https://example.test/flowly/'}});
+  const {initializePwa}=await import('../public/pwa.js?auto-activation-test');
+  await initializePwa({onStatus(){},onUpdate:callback=>{activate=callback;}});
+  assert.equal(activate,undefined);
+  events.controllerchange();
+  assert.equal(reloads,0);assert.equal(typeof activate,'function');
+  activate();assert.equal(reloads,1);
+ } finally {for(const key of Object.keys(original)){if(original[key])Object.defineProperty(globalThis,key,original[key]);else delete globalThis[key];}}
+});

@@ -9,6 +9,14 @@ import { walletLinks } from './cloud.js';
 import { createMonthlyUi } from './monthly-ui.js';
 
 const incomingAccess = takeRedirectSession().then(session => ({ session }), error => ({ error }));
+// A legacy document retains this flag for the new worker's targeted recovery.
+// An updated document removes it immediately so a later release cannot reload
+// this page while the user is editing a form.
+const startupUrl = new URL(location.href);
+if (startupUrl.searchParams.get('aggiorna') === '1') {
+  startupUrl.searchParams.delete('aggiorna');
+  history.replaceState(null, '', startupUrl.pathname + startupUrl.search + startupUrl.hash);
+}
 const $ = selector => document.querySelector(selector);
 const content = $('#content');
 const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: 'always' });
