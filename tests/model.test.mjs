@@ -212,3 +212,18 @@ test('monthly average uses elapsed calendar months instead of number of observat
  assert.equal(M.stats(add(configuredState(),'2026-01',10000)).averageMonthlyChange,null);
  assert.equal(M.stats(add(add(configuredState(),'2026-01',10000),'2026-03',10000)).averageMonthlyChange,0);
 });
+test('year growth compares January with the current total across active accounts',()=>{
+ let state=add(configuredState(),'2026-01',1443764);
+ state=add(state,'2026-11',1214922);
+ state.accounts=[
+  {id:'11111111-1111-4111-8111-111111111111',name:'Fineco',type:'bank',openingCents:1214922,openingAt:'2026-11-01T00:00:00.000Z',archived:false},
+  {id:'22222222-2222-4222-8222-222222222222',name:'Crypto',type:'virtual',openingCents:189168,openingAt:'2026-11-01T00:00:00.000Z',archived:false}
+ ];
+ state.transactions=[];
+ const result=M.currentYearGrowth(state,'2026-11-16');
+ assert.equal(result.currentCents,1404090);
+ assert.equal(result.changeCents,-39674);
+ assert.ok(Math.abs(result.rate-(-39674/1443764))<1e-10);
+ assert.equal(M.stats(state).growth,-228842);
+ assert.equal(M.currentYearGrowth(state,'2027-02-01').changeCents,null);
+});

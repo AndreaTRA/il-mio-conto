@@ -5,6 +5,7 @@ const ASSETS = ['index.html', 'app.css', 'app.js', 'model.js', 'storage.js', 'pw
 ASSETS.push('monthly-ui.js', 'ledger.js', 'accounts-ui.js', 'accounts.css');
 ASSETS.push('auth-ui.js', 'auth.css', 'goals.css', 'notifications.css', 'privacy.css');
 ASSETS.push('flowly-icon.svg', 'flowly-icon-180.png', 'flowly-icon-192.png', 'flowly-icon-512.png');
+ASSETS.push('calendar-ui.js', 'date-values.js', 'air-datepicker-3.6.0.js', 'air-datepicker-it.js', 'air-datepicker-3.6.0.css', 'polish.css');
 const urls = ASSETS.map(asset => new URL(asset, self.registration.scope).href);
 self.addEventListener('install', event => {
   // Activate only after the entire new app is cached. Legacy clients may never

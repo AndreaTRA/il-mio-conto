@@ -3,9 +3,15 @@
 export function createHandler({ url, anonKey, serviceKey, fetcher = fetch, now = () => Date.now() }) {
   const attempts = new Map();
   const allowed = new Set(['https://andreatra.github.io', 'http://localhost:8791', 'http://127.0.0.1:8791']);
+  const limited = (key, limit, time) => {
+    const count = attempts.get(key) || { start: time, count: 0 };
+    if (attempts.size >= 2000 && !attempts.has(key)) return true;
+    attempts.set(key, count);
+    return ++count.count > limit;
+  };
   return async request => {
     const origin = request.headers.get('origin');
-    const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Vary': 'Origin',
+    const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Vary': 'Origin', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
       ...(allowed.has(origin) ? { 'Access-Control-Allow-Origin': origin } : {}),
       'Access-Control-Allow-Headers': 'apikey, authorization, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
     const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });
@@ -14,18 +20,38 @@ export function createHandler({ url, anonKey, serviceKey, fetcher = fetch, now =
     if (request.method !== 'POST') return reply({ error: 'Method not allowed' }, 405);
     try {
       if (!url || !anonKey || !serviceKey) return reply({ error: 'Service unavailable' }, 503);
-      const text = await request.text();
-      if (text.length > 4096) return reply({ error: 'Invalid request' }, 400);
-      const { identifier: raw, password, action } = JSON.parse(text);
-      const identifier = String(raw || '').trim().toLowerCase();
-      if (!['login', 'recover'].includes(action) || !identifier || identifier.length > 254 || (action === 'login' && (typeof password !== 'string' || !password || password.length > 128))) return reply({ error: 'Invalid credentials' }, 400);
-      const key = (request.headers.get('x-forwarded-for') || 'unknown').split(',')[0] + ':' + identifier;
       const time = now();
-      for (const [id, item] of attempts) if (time - item.start > 60000) attempts.delete(id);
-      const count = attempts.get(key) || { start: time, count: 0 };
-      if (++count.count > 8 || attempts.size > 2000) return reply({ error: 'Rate limited' }, 429);
-      attempts.set(key, count);
-      const call = async (path, options = {}, privileged = false) => fetcher(url + path, { ...options, signal: AbortSignal.timeout(10000),
+      for (const [id, item] of attempts) if (time - item.start >= 60000) attempts.delete(id);
+      const ip = (request.headers.get('x-forwarded-for') || 'unknown').split(',')[0].trim().slice(0, 128);
+      if (limited('ip:' + ip, 40, time)) return reply({ error: 'Rate limited' }, 429);
+      if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return reply({ error: 'Invalid request' }, 415);
+      const length = request.headers.get('content-length');
+      if (length && (!/^\d+$/.test(length) || Number(length) > 4096)) return reply({ error: 'Invalid request' }, 413);
+      // Bound actual bytes too: Content-Length can be absent or untrusted.
+      const reader = request.body?.getReader();
+      if (!reader) return reply({ error: 'Invalid request' }, 400);
+      let text = '', size = 0, timer;
+      try {
+        const deadline = new Promise((_, reject) => { timer = setTimeout(() => { reader.cancel().catch(() => {}); reject(new Error('body timeout')); }, 10000); });
+        const decoder = new TextDecoder('utf-8', { fatal: true });
+        while (true) {
+          const { done, value } = await Promise.race([reader.read(), deadline]);
+          if (done) break;
+          size += value.byteLength;
+          if (size > 4096) { await reader.cancel(); return reply({ error: 'Invalid request' }, 413); }
+          text += decoder.decode(value, { stream: true });
+        }
+        text += decoder.decode();
+      } catch { return reply({ error: 'Invalid request' }, 400); }
+      finally { clearTimeout(timer); reader.releaseLock(); }
+      let payload;
+      try { payload = JSON.parse(text); } catch { return reply({ error: 'Invalid request' }, 400); }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return reply({ error: 'Invalid request' }, 400);
+      const { identifier: raw, password, action } = payload;
+      const identifier = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+      if (!['login', 'recover'].includes(action) || !identifier || identifier.length > 254 || (action === 'login' && (typeof password !== 'string' || !password || password.length > 128))) return reply({ error: 'Invalid credentials' }, 400);
+      if (limited('pair:' + ip + ':' + identifier, 8, time)) return reply({ error: 'Rate limited' }, 429);
+      const call = async (path, options = {}, privileged = false) => fetcher(url + path, { ...options, redirect: 'error', signal: AbortSignal.timeout(10000),
         headers: { apikey: privileged ? serviceKey : anonKey, Authorization: 'Bearer ' + (privileged ? serviceKey : anonKey), 'Content-Type': 'application/json' } });
       let email = identifier.includes('@') ? identifier : null;
       if (!email && /^[a-z0-9_.-]{3,32}$/.test(identifier)) {

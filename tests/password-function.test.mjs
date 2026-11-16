@@ -37,3 +37,24 @@ test('numeric Auth status codes do not hide the email confirmation requirement',
  const response=await handler(request({action:'login',identifier:'owner@example.test',password:'test-password'}));
  assert.equal(response.status,401);assert.equal((await response.json()).code,'email_not_confirmed');
 });
+test('oversized, chunked and malformed login bodies never reach Auth',async()=>{
+ let calls=0; const handler=createHandler({url,anonKey:'public',serviceKey:'secret',fetcher:async()=>{calls++;throw Error('unexpected');}});
+ for(const body of ['{','null','[]',JSON.stringify({action:'login',identifier:{toString:'owner'},password:'secret'}),'é'.repeat(2100)]){
+  const response=await handler(new Request(url,{method:'POST',headers:{'content-type':'application/json'},body}));
+  assert.ok([400,413].includes(response.status));
+ }
+ const chunks=new ReadableStream({start(c){c.enqueue(new TextEncoder().encode(' '.repeat(3000)));c.enqueue(new TextEncoder().encode(' '.repeat(2000)));c.close();}});
+ assert.equal((await handler(new Request(url,{method:'POST',headers:{'content-type':'application/json'},body:chunks,duplex:'half'}))).status,413);
+ assert.equal((await handler(new Request(url,{method:'POST',headers:{'content-type':'application/json','content-length':'99999'},body:'{}'}))).status,413);
+ assert.equal((await handler(new Request(url,{method:'POST',body:'{}'}))).status,415);
+ assert.equal(calls,0);
+});
+test('rotating usernames still hits the IP limit, and recovers after the time window',async()=>{
+ let time=100;
+ const handler=createHandler({url,anonKey:'public',serviceKey:'secret',now:()=>time,fetcher:async()=>Response.json({code:'invalid_credentials'},{status:400})});
+ for(let i=0;i<40;i++)assert.equal((await handler(request({action:'login',identifier:`user${i}@example.test`,password:'secret'}))).status,401);
+ const blocked=await handler(request({action:'login',identifier:'another@example.test',password:'secret'}));
+ assert.equal(blocked.status,429);assert.equal(blocked.headers.get('cache-control'),'no-store');assert.equal(blocked.headers.get('x-content-type-options'),'nosniff');
+ time+=60000;
+ assert.equal((await handler(request({action:'login',identifier:'another@example.test',password:'secret'}))).status,401);
+});

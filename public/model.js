@@ -228,6 +228,17 @@ export function stats(state) {
     annual: [...annual.values()].map(item => ({ year: item.year, count: item.count, last: item.last, change: item.count > 1 ? item.last - item.first : null }))
   };
 }
+/** Net change from the January snapshot to the same current total shown above.
+ * Expenses are never summed here. Other monthly metrics keep their snapshots. */
+export function currentYearGrowth(state, today) {
+  if (!isDate(today)) throw new Error('La data di confronto non è valida.');
+  const year = today.slice(0, 4);
+  const january = entryFor(state, `${year}-01`);
+  const baseline = january.balanceCents === null ? null : january;
+  const currentCents = goalPlan(state, today).balanceCents;
+  const changeCents = baseline && currentCents !== null ? currentCents - baseline.balanceCents : null;
+  return { year, baseline, currentCents, changeCents, rate: changeCents !== null && baseline.balanceCents > 0 ? changeCents / baseline.balanceCents : null };
+}
 export function csvFor(state) {
   const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
   const amount = value => value === null ? '' : (value / 100).toFixed(2).replace('.', ',');

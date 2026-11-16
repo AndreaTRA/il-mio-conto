@@ -1,0 +1,8 @@
+{
+  "name": "air-datepicker",
+  "version": "3.6.0",
+  "license": "MIT",
+  "source": "https://registry.npmjs.org/air-datepicker/-/air-datepicker-3.6.0.tgz",
+  "integrity": "sha512-+txUkqa949rXBJDmkQAIb/GehZECJYF4rm9XJxVYtEX22C9WvBpE/XwCUQZBopKIkpg4ycAySJ9lH3JOg9qQTw==",
+  "adapter": "UMD global target set to globalThis; default ESM export added. Italian locale converted from CommonJS to ESM."
+}

@@ -1,0 +1,53 @@
+/* Flowly's existing night palette, with larger reading and touch surfaces. */
+:root{--muted:#bdb3c8}
+.page-heading p,.panel-label,.metric-label{font-size:13px}
+.metric-note,.goal-note,.goal-progress,.savings-basis,.field-help,.subtle,.table-date,.info-caption{font-size:12px;line-height:1.75}
+.savings-detail,.form-panel>p,.backup-panel p,.backup-panel ol,.muted,.notice{font-size:13px}
+.metric{padding:23px}.metric-value{font-weight:600;line-height:1.4}.metric-note{margin-top:11px}
+.button{font-size:13px;min-height:48px}.filter{min-height:44px;font-size:13px}
+label{font-size:13px;font-weight:600}input:not([type=hidden]):not([type=file]),select:not(.filter){min-height:52px}
+input:focus,textarea:focus{border-color:var(--violet-light)}
+th,.chart-legend,.main-footer{font-size:12px}.edit-button{min-height:42px;font-size:12px}
+.dialog-header h2{font-size:23px;line-height:1.35;letter-spacing:-.7px}.icon-button{width:42px;height:42px}
+.date-trigger{width:100%;min-height:54px;padding:13px 15px;border:1px solid #635171;border-radius:11px;background:#15121e;color:var(--ink);display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;font-size:16px;line-height:1.5}
+.date-trigger:hover{background:#241b31;border-color:var(--violet-light)}.date-trigger.is-empty{color:var(--muted)}
+.date-trigger-icon{color:var(--violet-light);font-size:25px;line-height:1}.date-trigger-value{min-width:0;overflow-wrap:anywhere}
+.monthly-dates{display:grid;grid-template-columns:1fr 1.25fr;gap:16px}.monthly-dates>div{min-width:0}
+#monthly-account-fields{display:grid;gap:12px;margin-top:22px}
+.monthly-account-field,.monthly-account-field:first-child{padding:19px;margin:0;border:1px solid var(--line);border-radius:14px;background:#211b2d}
+.monthly-account-field label{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:16px;margin:0 0 7px}
+.monthly-account-field .optional{font-size:12px}.monthly-estimate{margin:0 0 12px!important}
+.monthly-account-field input{font-size:22px!important;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+.monthly-save{position:sticky;bottom:-29px;background:#1c1926;margin:0 -29px -29px;padding:15px 29px 23px;border-top:1px solid #51405f;z-index:1;box-shadow:0 -12px 24px #100f1728}
+.monthly-total{padding:0;border:0;font-size:13px}.monthly-total strong{font-size:22px;line-height:1.5;overflow-wrap:anywhere}.monthly-save .dialog-actions{margin-top:14px}
+.calendar-dialog{width:min(440px,calc(100vw - var(--safe-area-left) - var(--safe-area-right) - 24px));padding:24px;overscroll-behavior:contain}
+.calendar-header{display:flex;justify-content:space-between;gap:15px;align-items:center}.calendar-header h2{font-size:24px;letter-spacing:-.8px}.calendar-header .eyebrow{margin-bottom:3px}
+.calendar-selection{font-size:14px;color:var(--indigo);margin:15px 0 19px;min-height:24px}
+#calendar-surface{min-width:0}.air-datepicker{--adp-background-color:#1c1926;--adp-background-color-hover:#3a2c4d;--adp-background-color-active:#46325d;--adp-background-color-in-range:#342342;--adp-color:#f5f1fc;--adp-color-secondary:#bdb3c8;--adp-color-other-month:#887a96;--adp-color-disabled:#665c70;--adp-accent-color:#c6a5ff;--adp-color-current-date:#c6a5ff;--adp-color-selected:#fff;--adp-cell-background-color-selected:#8343ef;--adp-cell-background-color-selected-hover:#9457f6;--adp-day-name-color:#c6a5ff;--adp-day-name-color-hover:#eadbff;--adp-border-color:#393044;--adp-border-color-inner:#393044;--adp-nav-arrow-color:#c6a5ff;--adp-nav-color-secondary:#bdb3c8;--adp-cell-border-radius:11px;--adp-cell-height:43px;--adp-font-family:Manrope,system-ui,sans-serif;--adp-font-size:15px;--adp-width:100%;--adp-nav-height:48px;border:0;box-shadow:none;width:100%;background:transparent}
+.air-datepicker--content{padding:12px 0}.air-datepicker-nav{padding:0 0 10px}.air-datepicker-nav--action{width:43px;border:1px solid var(--line);border-radius:11px;font-size:29px;line-height:1}.air-datepicker-nav--title{font-size:16px;padding:0 10px;gap:6px;font-weight:600}.air-datepicker-nav--title i{color:var(--muted);font-weight:400}
+.air-datepicker-body--day-names{margin:9px 0 11px}.air-datepicker-body--day-name{font-size:11px;font-weight:600;letter-spacing:.3px}.air-datepicker-body--cells{gap:3px}.air-datepicker-cell.-month-,.air-datepicker-cell.-year-{height:64px;font-size:14px}
+.air-datepicker [role=button]:focus-visible{outline:2px solid var(--indigo);outline-offset:-2px}.air-datepicker-cell.-current-:not(.-selected-){box-shadow:inset 0 0 0 1px #796293}
+.calendar-quick{display:flex;align-items:center;gap:14px;padding:13px 0 18px;border-bottom:1px solid var(--line)}.calendar-quick span{font-size:12px;color:var(--muted);line-height:1.6}.calendar-quick .button{min-height:42px;padding:8px 13px}
+.calendar-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:10px;padding-top:18px}.calendar-actions .button{white-space:normal}
+#calendar-time-row{display:flex;align-items:center;gap:16px;padding-bottom:14px}#calendar-time-row label{margin:0}#calendar-time{width:auto;flex:1;font-size:16px}
+@media(max-width:800px){
+ .page-heading h1{font-size:30px}.page-heading p{font-size:13px;line-height:1.7}
+ .metric{padding:19px 16px}.metric-value{font-size:24px}.metric-label{line-height:1.5}
+ .topbar-actions{gap:8px}.connection{font-size:0;gap:6px;padding:8px;max-width:130px;min-height:40px}.connection:after{content:attr(data-short-label);font-size:10px;line-height:1.4}.connection:before{width:5px;height:5px}
+ .topbar .mobile-brand{font-size:25px;gap:8px}.topbar .brand-mark{width:30px;height:32px;font-size:26px}.numbers-toggle,.profile-link{width:38px;height:40px}
+ .sidebar nav a{font-size:11px;min-height:60px}.mobile-label{font-size:11px}
+ #monthly-dialog{padding:22px;width:calc(100% - 24px)}.monthly-save{bottom:-22px;margin:0 -22px -22px;padding:15px 22px 22px}
+ .monthly-dates{grid-template-columns:1fr;gap:0}.monthly-dates label{margin-top:18px}.monthly-account-field{padding:16px}
+ .dialog-header h2{font-size:22px}.calendar-dialog{padding:20px}.calendar-actions{gap:8px}
+}
+@media(max-width:360px){
+ .topbar .mobile-brand{font-size:21px;gap:6px}.topbar-actions{gap:5px}.connection{max-width:103px;padding:6px}.connection:after{font-size:9px}.numbers-toggle,.profile-link{width:34px}
+ .metric{padding:16px 12px}.metric-value{font-size:22px}.metric-label{font-size:12px}
+ .calendar-dialog{padding:16px}.air-datepicker{--adp-cell-height:38px}.calendar-header h2{font-size:22px}
+ .monthly-save .dialog-actions{display:grid;grid-template-columns:1fr 1.5fr}.monthly-save .button{padding:11px 10px;white-space:normal}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+
+.chart-wrap{position:relative;touch-action:pan-y}.actual-dot{cursor:crosshair;transition:r 140ms ease,stroke-width 140ms ease}.actual-dot.is-active{r:8;stroke:var(--paper);stroke-width:3}
+.chart-tooltip{position:absolute;z-index:2;transform:translateX(-50%);min-width:152px;padding:10px 13px;border:1px solid #776295;border-radius:11px;background:#2d2340;box-shadow:0 9px 24px #08060e99;color:var(--ink);pointer-events:none;text-align:center;white-space:nowrap}
+.chart-tooltip-month{display:block;color:var(--muted);font-size:11px;text-transform:capitalize}.chart-tooltip-value{display:block;font-size:15px;font-variant-numeric:tabular-nums;margin-top:2px}

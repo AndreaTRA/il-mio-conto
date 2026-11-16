@@ -7,6 +7,7 @@ import { createAuthUi } from './auth-ui.js';
 import { createAccountsUi } from './accounts-ui.js';
 import { walletLinks } from './cloud.js';
 import { createMonthlyUi } from './monthly-ui.js';
+import { initializeCalendarUi } from './calendar-ui.js';
 
 const incomingAccess = takeRedirectSession().then(session => ({ session }), error => ({ error }));
 // A legacy document retains this flag for the new worker's targeted recovery.
@@ -63,6 +64,7 @@ const accountsUi = createAccountsUi({ getState: () => state, getOwner: () => acc
   synchronize: async () => { await cloud.trigger(); if (cloud.status.phase !== 'synced') throw new Error(cloud.status.error || 'Sincronizza il conto prima di creare il codice.'); state = await Storage.load(); }
 });
 const monthlyUi = createMonthlyUi({ getState: () => state, getOwner: () => accessGranted ? currentUser?.id : null, money, persist, toast, onSaved: month => { tableYear = Number(month.slice(0, 4)); chartYear = String(tableYear); render(); } });
+initializeCalendarUi();
 const hasPendingUiEdit = () => Boolean(document.querySelector('dialog[open]') || dirtyForms.size);
 setInterval(() => { if (accessGranted && planDate !== todayDate() && !hasPendingUiEdit()) render(); }, 60000);
 
@@ -108,7 +110,11 @@ function setStatus() {
   const badge = $('#connection');
   const phase = cloud.status.phase;
   const syncLabels = { syncing: 'Sincronizzazione…', synced: 'Sincronizzato', pending: 'Modifiche in attesa', conflict: 'Valori da verificare', error: 'Sincronizzazione interrotta', 'update-required': 'Aggiornamento necessario' };
-  badge.textContent = !navigator.onLine ? 'Offline · invio in attesa' : syncLabels[phase] || 'Online · collegamento account';
+  const label = !navigator.onLine ? 'Offline · invio in attesa' : syncLabels[phase] || 'Online · collegamento account';
+  badge.textContent = label;
+  badge.dataset.shortLabel = !navigator.onLine ? 'Offline' : ({syncing:'Sincronizzo…',synced:'Sincronizzato',pending:'In attesa',conflict:'Da verificare',error:'Da sincronizzare','update-required':'Da aggiornare'}[phase] || 'Collegamento…');
+  badge.setAttribute('aria-label', label + '. Apri dettagli sincronizzazione');
+  badge.title = label;
   badge.classList.toggle('offline', !navigator.onLine || ['pending', 'conflict', 'error', 'update-required'].includes(phase));
   const syncNotice = $('#sync-notice');
   syncNotice.hidden = !['conflict', 'error', 'update-required'].includes(phase);
@@ -139,8 +145,9 @@ function neededNote(summary) {
   return `${plan.monthsLeft} versamenti, da ${monthLabel(plan.today.slice(0, 7))}, incluso il mese in corso.`;
 }
 function statsMarkup(summary) {
+  const growth = summary.yearGrowth;
   return `<div class="metrics">
-    <div class="metric"><p class="metric-label">Crescita dall’inizio</p><p class="metric-value ${color(summary.growth)}">${signed(summary.growth)}</p><p class="metric-note">${summary.first ? `Dal ${entryAsOf(summary.first)} · ${signedRate(summary.growthRate)}` : 'Aggiungi almeno due saldi.'}</p></div>
+    <div class="metric"><p class="metric-label">Dall’inizio dell’anno</p><p class="metric-value ${color(growth.changeCents)}">${signed(growth.changeCents)}</p><p class="metric-note">${growth.baseline ? `Rispetto a gennaio ${growth.year} · ${signedRate(growth.rate)}<br>Saldo iniziale: ${money(growth.baseline.balanceCents)}` : `Registra il saldo di gennaio ${growth.year} per il confronto.`}</p></div>
     <div class="metric"><p class="metric-label">Variazione ultimo mese</p><p class="metric-value ${color(summary.change)}">${signed(summary.change)}</p><p class="metric-note">${summary.change !== null ? `${signedRate(summary.rate)} rispetto al mese precedente` : 'Occorrono due mesi consecutivi.'}</p></div>
     <div class="metric"><p class="metric-label">Variazione media mensile</p><p class="metric-value ${color(summary.averageMonthlyChange)}">${signed(summary.averageMonthlyChange)}<span class="subtle"> / mese</span></p><p class="metric-note">${summary.elapsedMonths ? `Dal ${entryAsOf(summary.first)} al ${entryAsOf(summary.last)}, su ${summary.elapsedMonths} mesi.` : 'Aggiungi almeno due saldi per calcolare la media.'}</p></div>
   </div>`;
@@ -185,7 +192,7 @@ function chart(summary) {
   const L = Math.max(52, ...Array.from({ length: 5 }, (_, i) => axisLabel(low + (high - low) * i / 4).length * 7 + 13));
   const x = month => L + (Model.monthIndex(month) - start) / span * (W - L - R);
   const y = value => T + (high - value) / (high - low) * (H - T - B);
-  let svg = `<svg class="chart-svg" style="aspect-ratio:${W}/${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Andamento del saldo e obiettivo di ${esc(money(state.settings.targetCents))}"><title>Saldi mensili verificati. I mesi mancanti non sono collegati.</title><defs><linearGradient id="flowly-balance-line" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#a8b7ff"/><stop offset="55%" stop-color="#c6a5ff"/><stop offset="100%" stop-color="#ef99db"/></linearGradient></defs>`;
+  let svg = `<svg class="chart-svg" style="aspect-ratio:${W}/${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Andamento del saldo e obiettivo di ${esc(money(state.settings.targetCents))}"><title>Saldi mensili verificati. I mesi mancanti non sono collegati.</title><defs><linearGradient id="flowly-balance-line" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#a8b7ff"/><stop offset="55%" stop-color="#c6a5ff"/><stop offset="100%" stop-color="#ef99db"/></linearGradient></defs>`;
   for (let i = 0; i <= 4; i++) {
     const value = low + (high - low) * i / 4, yy = y(value);
     svg += `<line class="grid-line" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 12}" y="${yy + 4}" text-anchor="end">${esc(axisLabel(value))}</text>`;
@@ -201,7 +208,7 @@ function chart(summary) {
     path += `${path ? 'L' : 'M'}${x(entry.month).toFixed(2)},${y(entry.balanceCents).toFixed(2)} `; previousIndex = index;
   }); flush();
   entries.forEach(entry => {
-    if (entry.balanceCents !== null) svg += `<circle class="actual-dot" cx="${x(entry.month)}" cy="${y(entry.balanceCents)}" r="4.5" tabindex="0" role="img" aria-label="${esc(monthLabel(entry.month))}: ${esc(money(entry.balanceCents))}"><title>${esc(monthLabel(entry.month))}: ${esc(money(entry.balanceCents))}</title></circle>`;
+    if (entry.balanceCents !== null) svg += `<circle class="actual-dot" cx="${x(entry.month)}" cy="${y(entry.balanceCents)}" r="5" tabindex="0" role="button" data-chart-month="${esc(entry.month)}" data-chart-value="${esc(money(entry.balanceCents))}" aria-label="${esc(monthLabel(entry.month))}: ${esc(money(entry.balanceCents))}"><title>${esc(monthLabel(entry.month))}: ${esc(money(entry.balanceCents))}</title></circle>`;
   });
   const tickMonths = new Set();
   const tickCount = compact ? 3 : Math.max(3, Math.min(6, Math.floor((W - L - R) / 100)));
@@ -212,7 +219,7 @@ function chart(summary) {
     svg += `<text x="${x(month)}" y="${H - 9}" text-anchor="${anchor}">${esc(label)}</text>`;
   }); svg += '</svg>';
   const years = [...new Set([...availableYears(), ...(all ? [] : [Number(chartYear)])])].sort((a, b) => a - b);
-  return `<section class="panel chart-panel"><div class="section-top"><div><h2>Come sta andando</h2><p>Il saldo nel tempo, verso il tuo obiettivo.</p></div><label class="sr-only" for="chart-year">Periodo del grafico</label><select id="chart-year" class="filter">${years.map(year => `<option value="${year}" ${chartYear === String(year) ? 'selected' : ''}>${year}</option>`).join('')}<option value="all" ${all ? 'selected' : ''}>Tutto lo storico</option></select></div><div class="chart-wrap">${svg}</div><div class="chart-legend"><span><i class="legend-stroke"></i>Saldo del conto</span><span><i class="legend-stroke target"></i>Obiettivo</span></div></section>`;
+  return `<section class="panel chart-panel"><div class="section-top"><div><h2>Come sta andando</h2><p>Il saldo nel tempo, verso il tuo obiettivo.</p></div><label class="sr-only" for="chart-year">Periodo del grafico</label><select id="chart-year" class="filter">${years.map(year => `<option value="${year}" ${chartYear === String(year) ? 'selected' : ''}>${year}</option>`).join('')}<option value="all" ${all ? 'selected' : ''}>Tutto lo storico</option></select></div><div class="chart-wrap">${svg}<div class="chart-tooltip" role="status" aria-live="off" hidden><span class="chart-tooltip-month"></span><strong class="chart-tooltip-value"></strong></div></div><div class="chart-legend"><span><i class="legend-stroke"></i>Saldo del conto</span><span><i class="legend-stroke target"></i>Obiettivo</span></div></section>`;
 }
 function overview(summary) {
   const onboarding = summary.recorded.length || state.accounts.length || ['syncing', 'error', 'conflict', 'update-required'].includes(cloud.status.phase) ? '' : `<section class="notice onboarding"><strong>Inizia con i tuoi dati</strong><p>Su iPhone aggiungi prima l’app alla Home, aprila dall’icona e importa il backup dei saldi. I saldi importati si sincronizzano con il tuo account.</p><button class="button secondary" data-action="import">Importa backup</button></section>`;
@@ -374,6 +381,7 @@ function render() {
   visibilityButton.setAttribute('aria-pressed', String(numbersVisible));
   visibilityButton.classList.toggle('revealed', numbersVisible);
   const summary = Model.stats(state); summary.plan = Model.goalPlan(state, todayDate()); planDate = summary.plan.today;
+  summary.yearGrowth = Model.currentYearGrowth(state, planDate);
   summary.gap = summary.plan.missingCents;
   summary.progress = Model.hasGoal(state) && summary.plan.balanceCents !== null ? summary.plan.balanceCents / state.settings.targetCents : null;
   summary.reminders = Model.balanceReminders(state, planDate);
@@ -613,3 +621,52 @@ try {
   const message = document.createElement('p'); message.textContent = `Non posso aprire l’archivio: ${error.message} I dati esistenti non sono stati sostituiti.`;
   const button = document.createElement('button'); button.className = 'button secondary'; button.dataset.action = 'recover'; button.textContent = 'Esporta archivio da recuperare'; panel.append(message, button); content.append(panel);
 }
+
+function chartTooltip(point, event) {
+  if (!numbersVisible || !point?.isConnected) return;
+  const wrap = point.closest('.chart-wrap'), tooltip = wrap?.querySelector('.chart-tooltip');
+  if (!tooltip) return;
+  const pointRect = point.getBoundingClientRect(), wrapRect = wrap.getBoundingClientRect();
+  tooltip.querySelector('.chart-tooltip-month').textContent = monthLabel(point.dataset.chartMonth);
+  tooltip.querySelector('.chart-tooltip-value').textContent = point.dataset.chartValue;
+  tooltip.hidden = false;
+  const x = pointRect.left + pointRect.width / 2 - wrapRect.left;
+  tooltip.style.left = `${Math.max(76, Math.min(wrapRect.width - 76, x))}px`;
+  tooltip.style.top = `${Math.max(2, pointRect.top - wrapRect.top - tooltip.offsetHeight - 13)}px`;
+  wrap.querySelectorAll('.actual-dot.is-active').forEach(dot => dot.classList.remove('is-active'));
+  point.classList.add('is-active');
+}
+function chartPointAt(event) {
+  const wrap = event.target.closest?.('.chart-wrap');
+  if (!wrap) return null;
+  const dots = [...wrap.querySelectorAll('.actual-dot')];
+  if (!dots.length) return null;
+  return dots.reduce((nearest, dot) => {
+    const rect = dot.getBoundingClientRect(), position = rect.left + rect.width / 2;
+    return Math.abs(position - event.clientX) < Math.abs(nearest.getBoundingClientRect().left + nearest.getBoundingClientRect().width / 2 - event.clientX) ? dot : nearest;
+  });
+}
+function hideChartTooltip(wrap) {
+  if (!wrap) return;
+  const tooltip = wrap.querySelector('.chart-tooltip');
+  if (tooltip) tooltip.hidden = true;
+  wrap.querySelectorAll('.actual-dot.is-active').forEach(dot => dot.classList.remove('is-active'));
+}
+document.addEventListener('pointermove', event => {
+  if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
+  const wrap = event.target.closest?.('.chart-wrap');
+  if (wrap) chartTooltip(chartPointAt(event), event);
+});
+document.addEventListener('pointerdown', event => {
+  if (event.pointerType === 'touch') chartTooltip(chartPointAt(event), event);
+});
+document.addEventListener('pointerout', event => {
+  const wrap = event.target.closest?.('.chart-wrap');
+  if (wrap && !wrap.contains(event.relatedTarget) && event.pointerType !== 'touch') hideChartTooltip(wrap);
+});
+document.addEventListener('focusin', event => {
+  if (event.target.matches?.('.actual-dot')) chartTooltip(event.target, event);
+});
+document.addEventListener('focusout', event => {
+  if (event.target.matches?.('.actual-dot') && !event.target.closest('.chart-wrap')?.contains(event.relatedTarget)) hideChartTooltip(event.target.closest('.chart-wrap'));
+});
