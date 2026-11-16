@@ -130,17 +130,18 @@ test('CSV includes new years and escapes formulas and delimiters in notes', () =
   assert.ok(csv.includes('"Riga\ncon ""virgolette"""'));
 });
 
-test('saving plan starts today, even when the latest snapshot is older', () => {
+test('saving plan starts next month, even when the latest snapshot is older', () => {
  const state=add(configuredState(),'2026-10',1_000_000);
  const plan=M.goalPlan(state,'2026-11-02');
- assert.equal(plan.monthsLeft,50);assert.equal(plan.missingCents,4_000_000);assert.equal(plan.monthlyCents,80_000);
+ assert.equal(plan.monthsLeft,49);assert.equal(plan.missingCents,4_000_000);assert.equal(plan.monthlyCents,Math.ceil(4_000_000/49));
  assert.equal(M.stats(state).months,51);
  assert.equal(plan.last.month,'2026-10');
 });
 test('saving deposits round up, respect a passed deadline and preserve zero', () => {
  const state=add(configuredState(),'2030-11',4_999_999);
  assert.equal(M.goalPlan(state,'2030-11-30').monthlyCents,1);
- assert.equal(M.goalPlan(state,'2030-12-31').monthlyCents,1);
+ assert.equal(M.goalPlan(state,'2030-12-31').monthsLeft,0);
+ assert.equal(M.goalPlan(state,'2030-12-31').monthlyCents,null);
  assert.equal(M.goalPlan(state,'2031-01-01').monthlyCents,null);
  assert.equal(M.goalPlan(state,'2031-01-01').deadlinePassed,true);
  const reached=add(state,'2030-12',5_100_000);
@@ -226,4 +227,15 @@ test('year growth compares January with the current total across active accounts
  assert.ok(Math.abs(result.rate-(-39674/1443764))<1e-10);
  assert.equal(M.stats(state).growth,-228842);
  assert.equal(M.currentYearGrowth(state,'2027-02-01').changeCents,null);
+});
+
+test('next-month savings plan crosses the year boundary and respects a same-month deadline',()=>{
+ let state=add(configuredState(),'2026-12',1_000_000);
+ state.settings.deadline='2027-02-15';
+ const december=M.goalPlan(state,'2026-12-10');
+ assert.equal(december.monthsLeft,2);assert.equal(december.monthlyCents,2_000_000);
+ assert.equal(M.shiftMonth(december.today.slice(0,7),1),'2027-01');
+ state.settings.deadline='2026-12-31';
+ assert.equal(M.goalPlan(state,'2026-12-10').monthsLeft,0);
+ assert.equal(M.goalPlan(state,'2026-12-10').monthlyCents,null);
 });

@@ -149,7 +149,7 @@ export function remainingMonths(month, deadline) {
   if (!isDate(deadline)) throw new Error('Scadenza non valida.');
   return Math.max(0, monthIndex(deadline.slice(0, 7)) - monthIndex(month) + 1);
 }
-/** Saving plan as of today: equal monthly deposits, including the current month.
+/** Saving plan as of today: equal monthly deposits starting next month.
  * Future snapshots never count as money already available. Amounts round up to
  * a whole cent so the suggested deposits cover the target. */
 export function goalPlan(state, today) {
@@ -159,7 +159,7 @@ export function goalPlan(state, today) {
   const usesAccounts = accountCount > 0;
   const balanceCents = usesAccounts ? totalBalance(state) : last?.balanceCents ?? null;
   if (!hasGoal(state)) return { today, last, balanceCents, usesAccounts, accountCount, monthsLeft: null, missingCents: null, monthlyCents: null, deadlinePassed: false };
-  const monthsLeft = today > state.settings.deadline ? 0 : remainingMonths(today.slice(0, 7), state.settings.deadline);
+  const monthsLeft = today > state.settings.deadline ? 0 : Math.max(0, remainingMonths(today.slice(0, 7), state.settings.deadline) - 1);
   const missingCents = balanceCents === null ? null : Math.max(0, state.settings.targetCents - balanceCents);
   return { today, last, balanceCents, usesAccounts, accountCount, monthsLeft, missingCents,
     monthlyCents: missingCents === null ? null : missingCents === 0 ? 0 : monthsLeft ? Math.ceil(missingCents / monthsLeft) : null,
