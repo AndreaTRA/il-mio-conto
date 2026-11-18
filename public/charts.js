@@ -27,33 +27,48 @@ export function allocationMarkup(state, money, visible) {
 }
 
 
-const palette = ['#9276f5','#65b69f','#c7e68a','#81a8cc'];
 const defaultMoney = cents => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(cents/100);
 const compactMoney = cents => `${(cents/100).toLocaleString('it-IT',{notation:'compact',maximumFractionDigits:1})} €`;
-const commonOption = reduced => ({backgroundColor:'transparent',textStyle:{fontFamily:'Manrope, system-ui, sans-serif'},animation:!reduced,animationDuration:850,animationDurationUpdate:600,animationEasing:'cubicOut',animationEasingUpdate:'cubicInOut',tooltip:{confine:true,backgroundColor:'#111615',borderColor:'#40504c',borderWidth:1,padding:[10,13],textStyle:{color:'#f1f5f3',fontFamily:'Manrope',fontSize:12},extraCssText:'border-radius:10px;box-shadow:0 8px 24px #0004;'}});
+function chartTheme() {
+  const style = typeof document === 'undefined' ? null : getComputedStyle(document.documentElement);
+  const token = (name, fallback) => style?.getPropertyValue(name).trim() || fallback;
+  return {
+    background:token('--tooltip-bg','#141c19'), border:token('--border-control','#53675e'),
+    ink:token('--ink','#f1f5f3'), muted:token('--muted','#a4b5af'),
+    violet:token('--violet','#9276f5'), violetActive:token('--chart-active','#ad94fa'),
+    mint:token('--chart-line','#6cbba4'), mintActive:token('--chart-line-active','#a5e0cc'),
+    selection:token('--selection-bg','#9276f510'), track:token('--chart-track','#2a3334'),
+    surface:token('--paper','#202b29'), radius:parseFloat(token('--radius-control','12')),
+    palette:['--chart-1','--chart-2','--chart-3','--chart-4'].map((name,i)=>token(name,['#9276f5','#65b69f','#c7e68a','#81a8cc'][i]))
+  };
+}
+const commonOption = reduced => {
+  const theme=chartTheme();
+  return {backgroundColor:'transparent',textStyle:{fontFamily:'Manrope, system-ui, sans-serif'},animation:!reduced,animationDuration:850,animationDurationUpdate:600,animationEasing:'cubicOut',animationEasingUpdate:'cubicInOut',tooltip:{className:'flowly-chart-tooltip',confine:true,backgroundColor:theme.background,borderColor:theme.border,borderWidth:1,borderRadius:theme.radius,padding:[11,14],textStyle:{color:theme.ink,fontFamily:'Manrope',fontSize:13},extraCssText:`border-radius:${theme.radius}px;box-shadow:0 8px 24px #0003;`}};
+};
 
 /** Options are pure: tests can inspect the financial semantics without a browser. */
 export function historyOption(entries,{mode='bar',compact=false,reduced=false,money=defaultMoney,spark=false}={}) {
-  const option=commonOption(reduced), allYear=entries.length===12&&entries.every(e=>e.month.slice(0,4)===entries[0].month.slice(0,4));
+  const option=commonOption(reduced), theme=chartTheme(), allYear=entries.length===12&&entries.every(e=>e.month.slice(0,4)===entries[0].month.slice(0,4));
   const months=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
   const categories=entries.map(e=>allYear?months[Number(e.month.slice(5))-1]:label(e.month));
   const values=entries.map(e=>e.balanceCents);
   return {...option,
     grid:{top:spark?5:20,left:spark?3:compact?42:48,right:spark?3:12,bottom:spark?5:compact?43:32},
-    tooltip:{...option.tooltip,trigger:'axis',axisPointer:{type:mode==='bar'?'shadow':'line',shadowStyle:{color:'#ffffff05'},lineStyle:{color:'#78918a',type:'dashed'}},formatter:params=>{const p=params[0],e=entries[p?.dataIndex];return e?`<span style="color:#a8b9b3">${esc(monthName(e.month))}</span><br><strong>${e.balanceCents===null?'Non registrato':esc(money(e.balanceCents))}</strong>`:'';}},
+    tooltip:{...option.tooltip,trigger:'axis',axisPointer:{type:mode==='bar'?'shadow':'line',shadowStyle:{color:theme.selection,shadowBlur:0},lineStyle:{color:'#78918a',type:'dashed'}},formatter:params=>{const p=params[0],e=entries[p?.dataIndex];return e?`<span class="tooltip-period">${esc(monthName(e.month))}</span><br><strong>${e.balanceCents===null?'Non registrato':esc(money(e.balanceCents))}</strong>`:'';}},
     xAxis:{type:'category',data:categories,boundaryGap:mode==='bar',axisLine:{show:false},axisTick:{show:false},axisLabel:{show:!spark,interval:allYear?0:'auto',color:'#97a6a1',fontSize:compact?10:11,lineHeight:12,formatter:(value,index)=>compact&&allYear?(index%2?'\n'+value:value+'\n'):value,margin:12,hideOverlap:!allYear}},
     yAxis:{type:'value',show:!spark,min:values.some(v=>v!==null&&v<0)?undefined:0,splitNumber:4,axisLine:{show:false},axisTick:{show:false},axisLabel:{show:values.some(v=>v!==null),color:'#8b9b95',fontSize:compact?9:10,formatter:compactMoney},splitLine:{show:mode==='line'&&!spark,lineStyle:{color:'#34403c',opacity:.45,type:'dashed'}}},
-    series:[{id:'verified-balances',name:'Saldo verificato',type:mode==='bar'?'bar':'line',data:values,connectNulls:false,smooth:false,showSymbol:!spark,symbol:'circle',symbolSize:6,lineStyle:{color:'#6cbba4',width:spark?2:2.5},areaStyle:mode==='line'?{color:'#5fa48f',opacity:.045}:undefined,
-      itemStyle:{color:mode==='bar'?'#9276f5':'#6cbba4',borderRadius:22},barWidth:allYear?'78%':'60%',barMaxWidth:compact?19:46,barMinHeight:3,
-      showBackground:mode==='bar',backgroundStyle:{color:'#2a3334',borderRadius:24,opacity:.85},
-      selectedMode:'single',select:{itemStyle:{color:'#b8a4ff',borderColor:'#d9ceff',borderWidth:1}},emphasis:{itemStyle:{color:mode==='bar'?'#ac94fa':'#a5e0cc'},scale:true},animationDelay:i=>reduced?0:Math.min(i*35,420)}]
+    series:[{id:'verified-balances',name:'Saldo verificato',type:mode==='bar'?'bar':'line',data:values,connectNulls:false,smooth:false,showSymbol:!spark,symbol:'circle',symbolSize:6,lineStyle:{color:theme.mint,width:spark?2:2.5},areaStyle:mode==='line'?{color:'#5fa48f',opacity:.045}:undefined,
+      itemStyle:{color:mode==='bar'?theme.violet:theme.mint,borderRadius:22},barWidth:allYear?'78%':'60%',barMaxWidth:compact?19:46,barMinHeight:3,
+      showBackground:mode==='bar',backgroundStyle:{color:theme.track,borderRadius:24,opacity:.85},
+      selectedMode:'single',select:{itemStyle:{color:theme.violetActive,borderWidth:0}},emphasis:{itemStyle:{color:mode==='bar'?theme.violetActive:theme.mintActive},scale:true},animationDelay:i=>reduced?0:Math.min(i*35,420)}]
   };
 }
 
 export function allocationOption(accounts,{money=defaultMoney,reduced=false}={}) {
   if(!accounts.length||accounts.some(a=>a.balance<0)||accounts.reduce((sum,a)=>sum+a.balance,0)<=0)return null;
-  const base=commonOption(reduced);
-  return {...base,color:palette,tooltip:{...base.tooltip,trigger:'item',formatter:p=>`${esc(p.name)}<br><strong>${esc(money(p.value))}</strong> · ${p.percent}%`},series:[{id:'account-shares',type:'pie',radius:['64%','84%'],center:['50%','50%'],avoidLabelOverlap:true,label:{show:false},labelLine:{show:false},itemStyle:{borderWidth:3,borderColor:'#202a28',borderRadius:5},emphasis:{scale:true,scaleSize:5},selectedMode:'single',data:accounts.map(a=>({name:a.name,value:a.balance}))}]};
+  const base=commonOption(reduced), theme=chartTheme();
+  return {...base,color:theme.palette,tooltip:{...base.tooltip,trigger:'item',formatter:p=>`${esc(p.name)}<br><strong>${esc(money(p.value))}</strong> · ${p.percent}%`},series:[{id:'account-shares',type:'pie',radius:['64%','84%'],center:['50%','50%'],avoidLabelOverlap:true,label:{show:false},labelLine:{show:false},itemStyle:{borderWidth:3,borderColor:theme.surface,borderRadius:5},emphasis:{scale:true,scaleSize:5},selectedMode:'single',selectedOffset:4,data:accounts.map(a=>({name:a.name,value:a.balance}))}]};
 }
 export function goalOption(progress,{reduced=false}={}) {
   const value=Math.max(0,Math.min(1,progress));
@@ -90,6 +105,7 @@ export function mountCharts(root,{state,summary,entries,visible,mode='bar'}) {
     chart.on('updateAxisPointer',event=>{const index=event.axesInfo?.[0]?.value;if(Number.isInteger(index))readout(index);});
     chart.on('mouseover',p=>{if(p.dataIndex!==undefined)readout(p.dataIndex);});
     chart.on('click',p=>{if(p.dataIndex===undefined)return;readout(p.dataIndex);chart.dispatchAction({type:'select',seriesIndex:0,dataIndex:p.dataIndex});});
+    if(item.index>=0&&labels[item.index])readout(item.index);
   }
   for(const [kind,item] of instances){if(!active.has(kind)){item.observer.disconnect();item.chart.dispose();instances.delete(kind);}}
 }
