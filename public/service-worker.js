@@ -2,6 +2,7 @@ const VERSION = '__APP_VERSION__';
 const PREFIX = `conto-shell:${new URL(self.registration.scope).pathname}:`;
 const CACHE = PREFIX + VERSION;
 const ASSETS = ['index.html', 'app.css', 'app.js', 'model.js', 'storage.js', 'pwa.js', 'cloud.js', 'cloud-config.js', 'cloud-client.js', 'sync-engine.js', 'sync-merge.js', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'manrope-400.woff2', 'manrope-500.woff2', 'manrope-600.woff2', 'manrope-700.woff2'];
+ASSETS.push('fintech.css', 'charts.js', 'echarts-6.1.0.esm.min.js');
 ASSETS.push('monthly-ui.js', 'ledger.js', 'accounts-ui.js', 'accounts.css');
 ASSETS.push('auth-ui.js', 'auth.css', 'goals.css', 'notifications.css', 'privacy.css');
 ASSETS.push('flowly-icon.svg', 'flowly-icon-180.png', 'flowly-icon-192.png', 'flowly-icon-512.png');

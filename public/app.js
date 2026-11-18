@@ -1,4 +1,6 @@
 import * as Model from './model.js';
+import { historyChart, allocationMarkup, initializeCharts, chartMarkup, mountCharts, disposeCharts } from './charts.js';
+import * as Ledger from './ledger.js';
 import * as Storage from './storage.js';
 import { initializePwa, checkForAppUpdate, isInstalled } from './pwa.js';
 import { cloud, onCloudChange, initializeCloud, sendCode, verifyCode, verifyEmailLink, takeRedirectSession, acceptRedirectSession, session, signIn, requestPasswordRecovery, verifyRecoveryLink, resetPassword, register, requireApproved, manageAccounts, updateProfile, changeEmail } from './cloud.js';
@@ -45,8 +47,10 @@ const todayDate = () => {
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
 const dateLabel = date => new Date(date + 'T12:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-const titles = { panoramica: 'Panoramica', saldi: 'Saldi mensili', obiettivo: 'Obiettivo', notifiche: 'Notifiche', backup: 'Backup e dispositivi', account: 'Account e sicurezza', conti: 'Conti e movimenti' };
+const titles = { movimenti: 'Movimenti', panoramica: 'Panoramica', saldi: 'Saldi mensili', obiettivo: 'Obiettivo', notifiche: 'Notifiche', backup: 'Backup e dispositivi', account: 'Account e sicurezza', conti: 'Conti e movimenti' };
 const route = () => location.hash.startsWith('#conti/') ? 'conti' : Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : 'panoramica';
+let lastAnimatedBalance = null;
+let chartMode = 'bar';
 let state, tableYear = new Date().getFullYear(), chartYear = String(tableYear), toastTimer;
 let pwaStatus = 'preparing', activateUpdate;
 let pendingEmail = '';
@@ -73,8 +77,10 @@ function toast(message, error = false) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => node.hidden = true, error ? 8000 : 4000);
 }
 function lockAccess() {
+  disposeCharts();
+  $('#header-balance').replaceChildren(); $('#header-profile-name').textContent = 'Il tuo account';
   accountsUi.reset();
-  numbersVisible = false;
+  numbersVisible = false; lastAnimatedBalance = null;
   accessGranted = false; currentUser = null; accountProfile = null; managedUsers = null; $('#app-shell').hidden = true;
   document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
   content.replaceChildren(); $('#sidebar-accounts-list').replaceChildren(); dirtyForms.clear();
@@ -150,7 +156,7 @@ function statsMarkup(summary) {
   return `<div class="metrics">
     <div class="metric"><p class="metric-label">Dall’inizio dell’anno</p><p class="metric-value ${color(growth.changeCents)}">${signed(growth.changeCents)}</p><p class="metric-note">${growth.baseline ? `Rispetto a gennaio ${growth.year} · ${signedRate(growth.rate)}<br>Saldo iniziale: ${money(growth.baseline.balanceCents)}` : `Registra il saldo di gennaio ${growth.year} per il confronto.`}</p></div>
     <div class="metric"><p class="metric-label">Variazione ultimo mese</p><p class="metric-value ${color(summary.change)}">${signed(summary.change)}</p><p class="metric-note">${summary.change !== null ? `${signedRate(summary.rate)} rispetto al mese precedente` : 'Occorrono due mesi consecutivi.'}</p></div>
-    <div class="metric"><p class="metric-label">Variazione media mensile</p><p class="metric-value ${color(summary.averageMonthlyChange)}">${signed(summary.averageMonthlyChange)}<span class="subtle"> / mese</span></p><p class="metric-note">${summary.elapsedMonths ? `Dal ${entryAsOf(summary.first)} al ${entryAsOf(summary.last)}, su ${summary.elapsedMonths} mesi.` : 'Aggiungi almeno due saldi per calcolare la media.'}</p></div>
+    <div class="metric">${numbersVisible && summary.recorded.length > 1 ? chartMarkup('spark','Mini andamento dei saldi verificati') : ''}<p class="metric-label">Variazione media mensile</p><p class="metric-value ${color(summary.averageMonthlyChange)}">${signed(summary.averageMonthlyChange)}<span class="subtle"> / mese</span></p><p class="metric-note">${summary.elapsedMonths ? `Dal ${entryAsOf(summary.first)} al ${entryAsOf(summary.last)}, su ${summary.elapsedMonths} mesi.` : 'Aggiungi almeno due saldi per calcolare la media.'}</p></div>
   </div>`;
 }
 function goalPanel(summary) {
@@ -179,59 +185,37 @@ function monthlyTable(entries, notes = false) {
 function availableYears() {
   return [...new Set([new Date().getFullYear(), ...state.entries.map(entry => Number(entry.month.slice(0, 4))), Number(tableYear)])].sort((a, b) => a - b);
 }
-function chart(summary) {
-  if (!numbersVisible) return '<section class="panel chart-panel"><h2>Come sta andando</h2><div class="private-chart"><p>Grafico nascosto</p><p>Premi l’occhio per mostrare i dati economici.</p></div></section>';
-  const all = chartYear === 'all';
-  const entries = all && summary.recorded.length ? summary.recorded : Model.monthsForYear(all ? tableYear : chartYear).map(month => Model.entryFor(state, month));
-  const start = Model.monthIndex(entries[0].month), end = Model.monthIndex(entries.at(-1).month), span = Math.max(1, end - start);
-  let max = state.settings.targetCents, min = 0;
-  entries.forEach(entry => { if (entry.balanceCents !== null) { max = Math.max(max, entry.balanceCents); min = Math.min(min, entry.balanceCents); } });
-  const low = min < 0 ? min * 1.12 : 0, high = Math.max(max, 100) * 1.12;
-  const compact = window.innerWidth <= 800;
-  const W = Math.max(230, content.clientWidth - (compact ? 36 : 58)), H = compact ? 230 : 260, R = 20, T = 28, B = 35;
-  const axisLabel = value => `${(value / 100).toLocaleString('it-IT', { notation: 'compact', maximumFractionDigits: 1 })} €`;
-  const L = Math.max(52, ...Array.from({ length: 5 }, (_, i) => axisLabel(low + (high - low) * i / 4).length * 7 + 13));
-  const x = month => L + (Model.monthIndex(month) - start) / span * (W - L - R);
-  const y = value => T + (high - value) / (high - low) * (H - T - B);
-  let svg = `<svg class="chart-svg" style="aspect-ratio:${W}/${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Andamento del saldo e obiettivo di ${esc(money(state.settings.targetCents))}"><title>Saldi mensili verificati. I mesi mancanti non sono collegati.</title><defs><linearGradient id="flowly-balance-line" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#a8b7ff"/><stop offset="55%" stop-color="#c6a5ff"/><stop offset="100%" stop-color="#ef99db"/></linearGradient></defs>`;
-  for (let i = 0; i <= 4; i++) {
-    const value = low + (high - low) * i / 4, yy = y(value);
-    svg += `<line class="grid-line" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 12}" y="${yy + 4}" text-anchor="end">${esc(axisLabel(value))}</text>`;
-  }
-  const ty = y(state.settings.targetCents);
-  svg += `<line class="target-line" x1="${L}" x2="${W - R}" y1="${ty}" y2="${ty}"/><text class="target-label" x="${W - R}" y="${ty - 8}" text-anchor="end">Obiettivo ${esc(money(state.settings.targetCents))}</text>`;
-  let path = '', previousIndex = null;
-  const flush = () => { if (path) svg += `<path class="actual-line" d="${path}"/>`; path = ''; };
-  entries.forEach(entry => {
-    const index = Model.monthIndex(entry.month);
-    if (entry.balanceCents === null) { flush(); previousIndex = null; return; }
-    if (previousIndex !== null && index !== previousIndex + 1) flush();
-    path += `${path ? 'L' : 'M'}${x(entry.month).toFixed(2)},${y(entry.balanceCents).toFixed(2)} `; previousIndex = index;
-  }); flush();
-  entries.forEach(entry => {
-    if (entry.balanceCents !== null) svg += `<circle class="actual-dot" cx="${x(entry.month)}" cy="${y(entry.balanceCents)}" r="5" tabindex="0" role="button" data-chart-month="${esc(entry.month)}" data-chart-value="${esc(money(entry.balanceCents))}" aria-label="${esc(monthLabel(entry.month))}: ${esc(money(entry.balanceCents))}"><title>${esc(monthLabel(entry.month))}: ${esc(money(entry.balanceCents))}</title></circle>`;
-  });
-  const tickMonths = new Set();
-  const tickCount = compact ? 3 : Math.max(3, Math.min(6, Math.floor((W - L - R) / 100)));
-  for (let i = 0; i < tickCount; i++) tickMonths.add(Model.shiftMonth(entries[0].month, Math.round((end - start) * i / (tickCount - 1))));
-  tickMonths.forEach(month => {
-    const label = all ? `${month.slice(5)}/${month.slice(0, 4)}` : monthDate(month).toLocaleDateString('it-IT', { month: 'short' });
-    const anchor = month === entries[0].month ? 'start' : month === entries.at(-1).month ? 'end' : 'middle';
-    svg += `<text x="${x(month)}" y="${H - 9}" text-anchor="${anchor}">${esc(label)}</text>`;
-  }); svg += '</svg>';
-  const years = [...new Set([...availableYears(), ...(all ? [] : [Number(chartYear)])])].sort((a, b) => a - b);
-  return `<section class="panel chart-panel"><div class="section-top"><div><h2>Come sta andando</h2><p>Il saldo nel tempo, verso il tuo obiettivo.</p></div><label class="sr-only" for="chart-year">Periodo del grafico</label><select id="chart-year" class="filter">${years.map(year => `<option value="${year}" ${chartYear === String(year) ? 'selected' : ''}>${year}</option>`).join('')}<option value="all" ${all ? 'selected' : ''}>Tutto lo storico</option></select></div><div class="chart-wrap">${svg}<div class="chart-tooltip" role="status" aria-live="off" hidden><span class="chart-tooltip-month"></span><strong class="chart-tooltip-value"></strong></div></div><div class="chart-legend"><span><i class="legend-stroke"></i>Saldo del conto</span><span><i class="legend-stroke target"></i>Obiettivo</span></div></section>`;
+function periodSelect({primary=false}={}) {
+  const year=primary && chartYear==='all' ? String(tableYear) : chartYear;
+  return `<label class="sr-only" for="chart-year">Periodo del grafico</label><select id="chart-year" class="filter">${availableYears().map(y=>`<option value="${y}" ${year===String(y)?'selected':''}>${y}</option>`).join('')}${primary?'':`<option value="all" ${chartYear==='all'?'selected':''}>Tutto lo storico</option>`}</select>`;
+}
+function chart(summary, {primary=false}={}) {
+  const mode=primary?chartMode:'line';
+  return `<section class="panel chart-panel ${primary?'host-cashflows':'history-panel'}"><div class="section-top"><div><h2>${primary?'Patrimonio mensile':'Andamento nel tempo'}</h2>${primary?'': '<p>Saldi verificati. I mesi mancanti interrompono la linea.</p>'}</div><div class="chart-controls">${primary?`<span class="chart-key ${mode==='line'?'is-line':''}"><i></i> Saldo verificato</span><div class="segmented" role="group" aria-label="Tipo di grafico"><button type="button" data-chart-mode="bar" aria-pressed="${mode==='bar'}">Colonne</button><button type="button" data-chart-mode="line" aria-pressed="${mode==='line'}">Linea</button></div>`:route()==='panoramica'?'':periodSelect()}</div></div>${historyChart({visible:numbersVisible,mode,primary})}${primary?'<p class="chart-footnote">Le tracce scure indicano la scala del grafico. Un mese vuoto non vale zero.</p>':''}</section>`;
+}
+function dashboardAccounts() {
+  const active=state.accounts.filter(a=>!a.archived);
+  return `<section class="panel host-accounts"><div class="section-top"><h2>I tuoi conti</h2><a href="#conti" class="panel-more" aria-label="Apri tutti i conti">···</a></div><div class="host-account-list">${active.slice(0,3).map((a,i)=>`<a class="host-account" href="#conti/${a.id}"><span class="bank-avatar tone-${i%4}" aria-hidden="true">${esc([...a.name][0].toLocaleUpperCase('it-IT'))}</span><div><strong>${esc(a.name)}</strong><small>Conto in euro</small><span class="account-status">Incluso nel totale</span></div><b>${money(Ledger.accountBalance(state,a.id))}</b></a>`).join('') || '<div class="compact-empty"><p>Il tuo denaro, conto per conto.</p><span>Aggiungi un conto per iniziare.</span></div>'}</div><button class="button primary full" data-ledger="new-account">Aggiungi conto</button>${active.length>3?`<a class="text-link account-extra" href="#conti">Altri ${active.length-3} conti →</a>`:''}</section>`;
+}
+function dashboardMovements() {
+  const movements=state.transactions.slice().reverse().slice(0,4);
+  return `<section class="panel host-transactions"><div class="section-top"><h2>Ultimi movimenti</h2><a href="#movimenti" class="text-link">Vedi tutti</a></div><div class="host-movement-list">${movements.map(item=>{const account=state.accounts.find(a=>a.id===item.accountId);return `<a href="#conti/${item.accountId}" class="host-movement ${item.voided?'voided':''}"><span class="movement-avatar ${item.amountCents>0?'income':'expense'}" aria-hidden="true">${item.amountCents>0?'↙':'↗'}</span><div><strong>${esc(item.merchant||'Movimento')}</strong><small>${esc(account?.name||'Conto')} · ${item.voided?'Annullato':item.source==='apple-pay'?'Apple Pay':'Manuale'}</small></div><div class="host-movement-value"><b class="${item.voided?'':color(item.amountCents)}">${item.amountCents>0?'+':''}${money(item.amountCents)}</b><small>${new Date(item.occurredAt).toLocaleDateString('it-IT',{day:'numeric',month:'short'})}</small></div></a>`;}).join('') || '<div class="compact-empty"><p>Nessun movimento registrato</p><span>Le tue entrate e uscite appariranno qui.</span></div>'}</div><button class="button plain" data-ledger="new-movement" ${state.accounts.some(a=>!a.archived)?'':'disabled'}>+ Aggiungi movimento</button></section>`;
+}
+function dashboardActions(summary) {
+  const reminders=summary.reminders.slice(0,3), syncAttention=['error','conflict','pending','update-required'].includes(cloud.status.phase);
+  return `<section class="panel host-actions"><div class="section-top"><h2>Da completare</h2><a href="#notifiche" class="text-link">Vedi tutte</a></div><div class="host-action-list">${reminders.map(item=>`<button class="host-action" data-verify-month="${item.month}"><span class="action-avatar" aria-hidden="true">▤</span><span><strong>Verifica ${esc(monthLabel(item.month))}</strong><small>${item.overdue?'Saldo mensile da verificare':`Entro il ${dateLabel(item.dueDate)}`}</small></span><span class="action-arrow" aria-hidden="true">›</span></button>`).join('')}${needsGoalSetup()?'<a class="host-action" href="#obiettivo"><span class="action-avatar" aria-hidden="true">◎</span><span><strong>Scegli il tuo obiettivo</strong><small>Imposta importo e scadenza</small></span><span class="action-arrow">›</span></a>':''}${syncAttention?'<a class="host-action" href="#backup"><span class="action-avatar" aria-hidden="true">↻</span><span><strong>Controlla sincronizzazione</strong><small>Ci sono aggiornamenti in attesa</small></span><span class="action-arrow">›</span></a>':''}${!reminders.length&&!syncAttention&&!needsGoalSetup()?'<div class="compact-empty"><span class="all-clear" aria-hidden="true">✓</span><p>Tutto aggiornato</p><span>Non ci sono verifiche in sospeso.</span></div>':''}</div>${summary.reminders.length>3?`<a href="#notifiche" class="text-link action-extra">Altre ${summary.reminders.length-3} verifiche →</a>`:''}</section>`;
+}
+function dashboardGoal(summary) {
+  return `<section class="panel host-goal"><div class="section-top"><h2>Il tuo obiettivo</h2><a href="#obiettivo" class="panel-more" aria-label="Gestisci obiettivo">···</a></div>${numbersVisible&&summary.progress!==null?`<div class="goal-ring-layout">${chartMarkup('goal','Avanzamento del tuo obiettivo finanziario')}<div class="goal-ring-center"><strong>${pct(summary.progress)}</strong><small>raggiunto</small></div></div>`:numbersVisible?'<div class="compact-empty"><p>Il tuo prossimo traguardo</p><span>Imposta un obiettivo e registra un saldo.</span></div>':'<div class="goal-concealed">••••<small>Avanzamento nascosto</small></div>'}<div class="goal-figures"><span>Traguardo<strong>${money(state.settings.targetCents)}</strong></span><span>Da raggiungere<strong>${money(summary.gap)}</strong></span></div><div class="goal-monthly"><span>Da mettere da parte<strong>${money(summary.plan.monthlyCents)}<small> / mese</small></strong></span><a href="#obiettivo" aria-label="Apri il piano dell’obiettivo">↗</a></div><p class="goal-deadline">${state.settings.deadline?deadlineLabel():'Scadenza da scegliere'}</p></section>`;
 }
 function overview(summary) {
-  const onboarding = summary.recorded.length || state.accounts.length || ['syncing', 'error', 'conflict', 'update-required'].includes(cloud.status.phase) ? '' : `<section class="notice onboarding"><strong>Inizia con i tuoi dati</strong><p>Su iPhone aggiungi prima l’app alla Home, aprila dall’icona e importa il backup dei saldi. I saldi importati si sincronizzano con il tuo account.</p><button class="button secondary" data-action="import">Importa backup</button></section>`;
-  return heading('PANORAMICA', 'Tutto sotto controllo.', summary.plan.usesAccounts ? 'Il totale aggiornato di tutti i tuoi conti e attività.' : summary.last ? `Situazione al ${entryAsOf(summary.last)}.` : 'Registra i tuoi saldi, mese dopo mese.', addButton()) + onboarding +
-    `<div class="summary-grid"><div class="overview-grid"><section class="panel balance-panel" aria-labelledby="balance-card-title"><p class="panel-label" id="balance-card-title">${summary.plan.usesAccounts ? 'Saldo totale' : 'Saldo registrato'}</p><p class="balance-value">${!numbersVisible ? concealed : summary.plan.balanceCents !== null ? esc((summary.plan.balanceCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' })) : 'Da inserire'}${summary.plan.balanceCents !== null ? '<span class="currency">€</span>' : ''}</p><div class="balance-foot"><span class="pill ${summary.change < 0 ? 'down' : summary.change > 0 ? 'up' : ''}">${summary.plan.usesAccounts ? `${summary.plan.accountCount} ${summary.plan.accountCount === 1 ? 'conto incluso' : 'conti inclusi'}` : summary.change === null ? 'Il tuo punto di partenza' : `${summary.change < 0 ? '↘' : summary.change > 0 ? '↗' : '='} ${signedRate(summary.rate)} dall’ultimo mese`}</span><span class="subtle">${summary.plan.usesAccounts ? 'Conti e attività' : 'Storico mensile'}</span></div></section>${goalPanel(summary)}${savingsPanel(summary)}</div>
-    ${statsMarkup(summary)}</div>${accountsUi.markup(false)}${chart(summary)}<section class="panel table-panel"><div class="table-intro"><div><h2>Gli ultimi saldi</h2><p>Il totale dei conti verificato ogni mese.</p></div><a class="button plain" href="#saldi">Vedi tutti →</a></div>${summary.recorded.length ? monthlyTable(summary.recorded.slice(-4).reverse()) : '<p class="empty-state">Nessun saldo registrato.</p>'}</section>`;
+  return heading('IL TUO SPAZIO', 'Panoramica', 'Il tuo patrimonio, mese dopo mese.', `<div class="heading-actions">${periodSelect({primary:true})}<button class="button secondary" data-action="export" aria-label="Esporta backup"><span aria-hidden="true">↥</span><span class="export-label">Esporta</span></button></div>`) +
+    `<div class="mobile-balance-summary"><span>${summary.plan.usesAccounts ? 'Patrimonio totale' : 'Ultimo saldo verificato'}</span><strong>${money(summary.plan.balanceCents)}</strong></div><div class="host-dashboard">${chart(summary,{primary:true})}${dashboardAccounts()}${dashboardMovements()}${dashboardActions(summary)}${dashboardGoal(summary)}</div><div class="insights-heading"><h2>Il quadro completo</h2><span>Saldi correnti e storico verificato</span></div>${statsMarkup(summary)}<div class="host-insights">${chart(summary)}${allocationMarkup(state,money,numbersVisible)}</div><section class="panel table-panel"><div class="table-intro"><div><h2>Gli ultimi saldi</h2><p>Il totale dei conti verificato ogni mese.</p></div><a class="text-link" href="#saldi">Vedi tutti →</a></div>${summary.recorded.length?monthlyTable(summary.recorded.slice(-4).reverse()):'<p class="empty-state">Nessun saldo registrato. Aggiungi un conto e verifica i saldi per iniziare.</p>'}</section>`;
 }
-function balances() {
+function balances(summary) {
   const entries = Model.monthsForYear(tableYear).map(month => Model.entryFor(state, month));
   return heading('IL TUO STORICO', 'Saldi mensili', 'Scegli qualsiasi anno e inserisci i mesi disponibili.', addButton()) +
-    `<div class="year-control"><button class="button secondary" data-year-step="-1" aria-label="Anno precedente" ${tableYear <= 1 ? 'disabled' : ''}>←</button><div><label for="table-year">Anno</label><input type="number" id="table-year" min="1" max="9999" value="${tableYear}" inputmode="numeric"></div><button class="button secondary" data-year-step="1" aria-label="Anno successivo" ${tableYear >= 9999 ? 'disabled' : ''}>→</button></div>
+    `${chart(summary)}<div class="year-control"><button class="button secondary" data-year-step="-1" aria-label="Anno precedente" ${tableYear <= 1 ? 'disabled' : ''}>←</button><div><label for="table-year">Anno</label><input type="number" id="table-year" min="1" max="9999" value="${tableYear}" inputmode="numeric"></div><button class="button secondary" data-year-step="1" aria-label="Anno successivo" ${tableYear >= 9999 ? 'disabled' : ''}>→</button></div>
     <p class="record-summary">${entries.filter(entry => entry.balanceCents !== null).length} saldi su 12 per il ${tableYear}.</p><section class="panel table-panel">${monthlyTable(entries, true)}<p class="info-caption">Le variazioni confrontano due mesi consecutivi. Un mese vuoto non viene considerato un saldo a zero. Le verifiche conservano anche il dettaglio di ogni conto.</p></section>`;
 }
 function goalSetup() {
@@ -242,7 +226,7 @@ function goal(summary) {
   if (needsGoalSetup()) return goalSetup();
   const text = neededNote(summary);
   return heading('IL TUO TRAGUARDO', 'Obiettivo', 'Scegli importo e scadenza. Puoi aggiornarli nel tempo.') +
-    `<div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano il totale aggiornato dei conti; se non hai ancora conti, l’ultimo saldo mensile disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="${numbersVisible ? 'text' : 'password'}" autocomplete="off" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">DA RISPARMIARE DAL PROSSIMO MESE</p><p class="big-needed">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Calcolo al ${dateLabel(summary.plan.today)}, con il primo versamento dal mese successivo. Nessun rendimento futuro viene ipotizzato.</p></section></div>
+    `<div class="goal-overview">${goalPanel(summary)}<section class="panel goal-accumulated"><p class="panel-label">Già accumulato</p><p class="goal-number">${money(summary.plan.balanceCents)}</p><p class="muted">${summary.plan.usesAccounts ? "Totale aggiornato dei conti inclusi" : "Ultimo saldo mensile disponibile"}</p></section></div><div class="goal-detail"><section class="panel form-panel"><h2>Il saldo che vuoi raggiungere</h2><p>I calcoli usano il totale aggiornato dei conti; se non hai ancora conti, l’ultimo saldo mensile disponibile. L’app continua a registrare i mesi anche dopo questa scadenza.</p><form id="goal-form"><label for="goal-amount">Obiettivo (€)</label><input id="goal-amount" inputmode="decimal" type="${numbersVisible ? 'text' : 'password'}" autocomplete="off" value="${(state.settings.targetCents / 100).toFixed(2).replace('.', ',')}" required><label for="goal-deadline">Scadenza</label><input id="goal-deadline" type="date" min="0001-01-01" max="9999-12-31" value="${state.settings.deadline}" required><p id="goal-error" class="form-error" role="alert"></p><button class="button primary" type="submit">Salva obiettivo</button></form></section><section class="panel goal-info"><p class="eyebrow">DA RISPARMIARE DAL PROSSIMO MESE</p><p class="big-needed">${money(summary.plan.monthlyCents)}<span class="subtle"> / mese</span></p><p>${text}</p><p class="info-rule">Calcolo al ${dateLabel(summary.plan.today)}, con il primo versamento dal mese successivo. Nessun rendimento futuro viene ipotizzato.</p></section></div>
     <section class="panel table-panel"><div class="table-intro"><div><h2>Anno per anno</h2><p>Dal primo all’ultimo saldo disponibile nell’anno.</p></div></div>${summary.annual.length ? `<div class="table-scroll"><table><thead><tr><th>Anno</th><th class="amount">Mesi registrati</th><th class="amount">Ultimo saldo</th><th class="amount">Variazione nell’anno</th></tr></thead><tbody>${summary.annual.map(annual => `<tr><td>${annual.year}</td><td class="amount">${annual.count}</td><td class="amount">${money(annual.last)}</td><td class="amount ${color(annual.change)}">${signed(annual.change)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Gli anni appariranno con i primi saldi.</p>'}<p class="info-caption">${summary.up} mesi in crescita · ${summary.down} in decrescita · ${summary.stable} stabili · ${summary.over} saldi pari o superiori all’obiettivo.</p></section>`;
 }
 function cloudMarkup() {
@@ -369,7 +353,7 @@ function setNumbersVisible(visible) {
 function render() {
   if (!accessGranted) return;
   if (state && needsGoalSetup() && !['account','backup','notifiche','conti'].includes(route())) history.replaceState(null, '', location.pathname + location.search + '#obiettivo');
-  const view = route(); $('#breadcrumb').textContent = titles[view];
+  const view = route(); if (view === 'panoramica' && chartYear === 'all') chartYear = String(tableYear); $('#breadcrumb').textContent = titles[view];
   $('#profile-link').classList.toggle('active', view === 'account');
   if (view === 'account') $('#profile-link').setAttribute('aria-current', 'page'); else $('#profile-link').removeAttribute('aria-current');
   document.querySelectorAll('[data-view]').forEach(link => { const active = link.dataset.view === view; link.classList.toggle('active', active); if (active && !(view === 'conti' && accountsUi.selectedAccount())) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
@@ -390,7 +374,31 @@ function render() {
   if (accountProfile?.is_admin && managedUsers === null && !usersLoading && !usersError) queueMicrotask(loadUsers);
   const drafts = [...content.querySelectorAll('#profile-form, #profile-email-form, #reminder-form')].filter(form => dirtyForms.has(form.id)).flatMap(form => [...form.querySelectorAll('input,select')].map(input => [input.id, input.value]));
   const draftErrors = [...content.querySelectorAll('#profile-error, #profile-email-error, #reminder-error')].map(node => [node.id, node.textContent]);
-  content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, notifiche: notificationsView, backup, account: accountView, conti: () => heading('IL TUO DENARO', esc(accountsUi.selectedAccount()?.name || 'Conti e movimenti'), accountsUi.selectedAccount() ? 'Saldo e movimenti del conto selezionato.' : 'Saldi separati, un unico totale.', '<button class="button primary" data-ledger="new-account">Aggiungi conto</button>') + accountsUi.markup(true) }[view])(summary);
+  content.dataset.view = view;
+  content.innerHTML = ({ panoramica: overview, saldi: balances, obiettivo: goal, notifiche: notificationsView, backup, account: accountView, movimenti: () => heading('ATTIVITÀ', 'Movimenti', 'Ogni entrata e uscita, al posto giusto.', '<button class="button primary" data-ledger="new-movement">Aggiungi movimento</button>') + accountsUi.markup(true, true), conti: () => heading('IL TUO DENARO', esc(accountsUi.selectedAccount()?.name || 'Conti e movimenti'), accountsUi.selectedAccount() ? 'Saldo e movimenti del conto selezionato.' : 'Saldi separati, un unico totale.', '<button class="button primary" data-ledger="new-account">Aggiungi conto</button>') + allocationMarkup(state, money, numbersVisible) + accountsUi.markup(true) }[view])(summary);
+  content.insertAdjacentHTML('afterbegin', `<nav class="mobile-utilities" aria-label="Altre sezioni"><a href="#notifiche" ${view === 'notifiche' ? 'aria-current="page"' : ''}>Notifiche${summary.reminders.length ? ` · ${summary.reminders.length}` : ''}</a><a href="#backup" ${view === 'backup' ? 'aria-current="page"' : ''}>Backup e dispositivi</a><a href="#account" ${view === 'account' ? 'aria-current="page"' : ''}>Account</a></nav>`);
+  const currentBalance = numbersVisible ? summary.plan.balanceCents : null;
+  $('#header-balance').innerHTML = `<span>Patrimonio totale</span><strong class="balance-digits">${money(summary.plan.balanceCents)}</strong>`;
+  const balanceNode = $('#header-balance strong');
+  if (currentBalance !== null && lastAnimatedBalance !== null && currentBalance !== lastAnimatedBalance && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const from = lastAnimatedBalance, start = performance.now();
+    const tick = time => {
+      if (!balanceNode.isConnected || !numbersVisible) return;
+      const t = Math.min(1, (time-start)/450);
+      balanceNode.textContent = money(Math.round(from+(currentBalance-from)*(1-(1-t)**3)));
+      if(t<1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+  lastAnimatedBalance = currentBalance;
+  $('#header-profile-name').textContent = [accountProfile?.first_name,accountProfile?.last_name].filter(Boolean).join(' ') || 'Il tuo account';
+  const selectedYear = chartYear === 'all' ? null : chartYear;
+  const chartEntries = selectedYear ? Model.monthsForYear(selectedYear).map(month=>Model.entryFor(state,month)) : (()=>{
+    if(!summary.recorded.length)return [];
+    const first=summary.recorded[0].month,last=summary.recorded.at(-1).month;
+    return Array.from({length:Model.monthIndex(last)-Model.monthIndex(first)+1},(_,i)=>Model.entryFor(state,Model.shiftMonth(first,i)));
+  })();
+  mountCharts(content,{state,summary,entries:chartEntries,visible:numbersVisible,mode:chartMode});
   drafts.forEach(([id, value]) => { const input = document.getElementById(id); if (input) input.value = value; });
   if (drafts.length) draftErrors.forEach(([id, value]) => { const node = document.getElementById(id); if (node) node.textContent = value; });
 }
@@ -427,7 +435,7 @@ document.addEventListener('click', async event => {
   const close = event.target.closest('[data-close]'); if (close) { close.closest('dialog').close(); return; }
   const verify = event.target.closest('[data-verify-month]'); if (verify) { openEntry(verify.dataset.verifyMonth, { fresh: true }); return; }
   const edit = event.target.closest('[data-edit]'); if (edit) { openEntry(edit.dataset.edit); return; }
-  const step = event.target.closest('[data-year-step]'); if (step) { tableYear += Number(step.dataset.yearStep); render(); return; }
+  const step = event.target.closest('[data-year-step]'); if (step) { tableYear += Number(step.dataset.yearStep); chartYear = String(tableYear); render(); return; }
   const notificationStep = event.target.closest('[data-notification-page]'); if (notificationStep) { notificationPage = Math.max(0, notificationPage + Number(notificationStep.dataset.notificationPage)); render(); return; }
   const userAction = event.target.closest('[data-user-id]');
   if (userAction && accessGranted && accountProfile?.is_admin) {
@@ -541,9 +549,9 @@ content.addEventListener('submit', async event => {
 });
 content.addEventListener('change', event => {
   if (event.target.id === 'reminder-day') dirtyForms.add('reminder-form');
-  if (event.target.id === 'chart-year') { chartYear = event.target.value; render(); }
+  if (event.target.id === 'chart-year') { chartYear = event.target.value; if (route() === 'saldi' && chartYear !== 'all') tableYear = Number(chartYear); render(); }
   if (event.target.id === 'table-year') {
-    try { Model.monthsForYear(event.target.value); tableYear = Number(event.target.value); render(); }
+    try { Model.monthsForYear(event.target.value); tableYear = Number(event.target.value); chartYear = String(tableYear); render(); }
     catch (error) { toast(error.message, true); event.target.value = tableYear; }
   }
 });
@@ -583,7 +591,7 @@ content.addEventListener('submit', async event => {
 document.addEventListener('input', event => { const id = event.target.closest('form')?.id; if (['goal-form', 'cloud-email-form', 'cloud-code-form', 'cloud-link-form', 'profile-form', 'profile-email-form', 'reminder-form'].includes(id)) dirtyForms.add(id); });
 window.addEventListener('hashchange', () => { dirtyForms.clear(); render(); if (route() === 'account') refreshProfile(); window.scrollTo({ top: 0, behavior: 'auto' }); });
 window.addEventListener('online', setStatus); window.addEventListener('offline', setStatus);
-let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state && route() === 'panoramica' && !document.querySelector('dialog[open]')) render(); }, 150); });
+let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state && accessGranted && ['panoramica', 'saldi'].includes(route()) && !hasPendingUiEdit()) render(); }, 150); });
 Storage.subscribe(async () => { if (accessGranted && (await session())?.user.id !== currentUser?.id) { lockAccess(); return; } if (!hasPendingUiEdit()) { try { const latest = await Storage.load(); if (!hasPendingUiEdit()) { state = latest; render(); setStatus(); } } catch (error) { toast(error.message, true); } } });
 onCloudChange(async update => {
   setStatus();
@@ -623,51 +631,10 @@ try {
   const button = document.createElement('button'); button.className = 'button secondary'; button.dataset.action = 'recover'; button.textContent = 'Esporta archivio da recuperare'; panel.append(message, button); content.append(panel);
 }
 
-function chartTooltip(point, event) {
-  if (!numbersVisible || !point?.isConnected) return;
-  const wrap = point.closest('.chart-wrap'), tooltip = wrap?.querySelector('.chart-tooltip');
-  if (!tooltip) return;
-  const pointRect = point.getBoundingClientRect(), wrapRect = wrap.getBoundingClientRect();
-  tooltip.querySelector('.chart-tooltip-month').textContent = monthLabel(point.dataset.chartMonth);
-  tooltip.querySelector('.chart-tooltip-value').textContent = point.dataset.chartValue;
-  tooltip.hidden = false;
-  const x = pointRect.left + pointRect.width / 2 - wrapRect.left;
-  tooltip.style.left = `${Math.max(76, Math.min(wrapRect.width - 76, x))}px`;
-  tooltip.style.top = `${Math.max(2, pointRect.top - wrapRect.top - tooltip.offsetHeight - 13)}px`;
-  wrap.querySelectorAll('.actual-dot.is-active').forEach(dot => dot.classList.remove('is-active'));
-  point.classList.add('is-active');
-}
-function chartPointAt(event) {
-  const wrap = event.target.closest?.('.chart-wrap');
-  if (!wrap) return null;
-  const dots = [...wrap.querySelectorAll('.actual-dot')];
-  if (!dots.length) return null;
-  return dots.reduce((nearest, dot) => {
-    const rect = dot.getBoundingClientRect(), position = rect.left + rect.width / 2;
-    return Math.abs(position - event.clientX) < Math.abs(nearest.getBoundingClientRect().left + nearest.getBoundingClientRect().width / 2 - event.clientX) ? dot : nearest;
-  });
-}
-function hideChartTooltip(wrap) {
-  if (!wrap) return;
-  const tooltip = wrap.querySelector('.chart-tooltip');
-  if (tooltip) tooltip.hidden = true;
-  wrap.querySelectorAll('.actual-dot.is-active').forEach(dot => dot.classList.remove('is-active'));
-}
-document.addEventListener('pointermove', event => {
-  if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
-  const wrap = event.target.closest?.('.chart-wrap');
-  if (wrap) chartTooltip(chartPointAt(event), event);
-});
-document.addEventListener('pointerdown', event => {
-  if (event.pointerType === 'touch') chartTooltip(chartPointAt(event), event);
-});
-document.addEventListener('pointerout', event => {
-  const wrap = event.target.closest?.('.chart-wrap');
-  if (wrap && !wrap.contains(event.relatedTarget) && event.pointerType !== 'touch') hideChartTooltip(wrap);
-});
-document.addEventListener('focusin', event => {
-  if (event.target.matches?.('.actual-dot')) chartTooltip(event.target, event);
-});
-document.addEventListener('focusout', event => {
-  if (event.target.matches?.('.actual-dot') && !event.target.closest('.chart-wrap')?.contains(event.relatedTarget)) hideChartTooltip(event.target.closest('.chart-wrap'));
+initializeCharts(content, () => numbersVisible);
+content.addEventListener('click', event => {
+  const button = event.target.closest('[data-chart-mode]');
+  if (!button) return;
+  chartMode = button.dataset.chartMode; render();
+  content.querySelector(`[data-chart-mode="${chartMode}"]`)?.focus({ preventScroll: true });
 });

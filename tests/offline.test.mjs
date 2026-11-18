@@ -23,7 +23,7 @@ test('service worker caches the app at a GitHub project subpath and opens offlin
   const app = await worker(); let installation;
   app.handlers.get('install')({ waitUntil(promise) { installation = promise; } }); await installation;
   const store = [...app.stores.values()][0];
-  for (const asset of ['index.html', 'app.js', 'model.js', 'storage.js', 'pwa.js', 'app.css', 'manifest.webmanifest']) assert.ok(store.has(app.scope + asset));
+  for (const asset of ['index.html', 'app.js', 'model.js', 'storage.js', 'pwa.js', 'app.css', 'manifest.webmanifest', 'fintech.css', 'charts.js']) assert.ok(store.has(app.scope + asset));
   assert.ok(![...store.keys()].some(url => /backup|seed|api|saldi-iniziali/.test(url)));
   let navigation;
   app.handlers.get('fetch')({ request: { method: 'GET', mode: 'navigate', url: app.scope + '?anything=1' }, respondWith(promise) { navigation = promise; } });

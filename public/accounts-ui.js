@@ -10,29 +10,31 @@ const instantInput = value => {
   return local.toISOString().slice(0, 23);
 };
 
-export function accountsMarkup(state, money, { full = false, accountFilter = '', page = 0 } = {}) {
+export function accountsMarkup(state, money, { full = false, accountFilter = '', page = 0, movementsOnly = false, search = '', kind = 'all' } = {}) {
   const accounts = state.accounts.filter(account => full && accountFilter ? account.id === accountFilter : full || !account.archived);
   const active = state.accounts.filter(account => !account.archived);
-  const movements = state.transactions.filter(item => !accountFilter || item.accountId === accountFilter).slice().reverse();
+  const query = search.trim().toLocaleLowerCase('it-IT');
+  const movements = state.transactions.filter(item => (!accountFilter || item.accountId === accountFilter) && (kind === 'all' || (kind === 'expense' ? item.amountCents < 0 : item.amountCents > 0)) && (!query || [item.merchant, state.accounts.find(a => a.id === item.accountId)?.name].some(value => value?.toLocaleLowerCase('it-IT').includes(query)))).slice().reverse();
   const pages = Math.max(1, Math.ceil(movements.length / 20));
   page = Math.max(0, Math.min(page, pages - 1));
   const visible = full ? movements.slice(page * 20, page * 20 + 20) : movements.slice(0, 5);
-  return `<section class="panel accounts-panel" aria-labelledby="accounts-title"><div class="section-top"><div><h2 id="accounts-title">I miei conti</h2><p>Ogni spesa aggiorna solo il conto a cui appartiene.</p></div>${full ? '' : '<button class="button secondary" data-ledger="new-account">Aggiungi conto</button>'}</div>
+  const markup = `<section class="panel accounts-panel" aria-labelledby="accounts-title"><div class="section-top"><div><h2 id="accounts-title">I miei conti</h2><p>Ogni spesa aggiorna solo il conto a cui appartiene.</p></div>${full ? '' : '<button class="button secondary" data-ledger="new-account">Aggiungi conto</button>'}</div>
   <div class="accounts-total"><div><p class="panel-label">Totale dei conti</p><strong>${money(Ledger.totalBalance(state))}</strong></div><p>${active.length} ${active.length === 1 ? 'conto incluso' : 'conti inclusi'} · EUR<br>Saldo stimato dai movimenti registrati</p></div>
-  ${accounts.length ? `<div class="account-grid">${accounts.map(account => `<article class="account-card ${account.archived ? 'archived' : ''}"><div class="account-card-title"><h3>${esc(account.name)}</h3><span>${account.archived ? 'Escluso dal totale' : 'EUR'}</span></div><p class="account-value">${money(Ledger.accountBalance(state, account.id))}</p><p class="account-checkpoint">Saldo verificato il ${stampLabel(account.openingAt)}</p><div class="account-card-actions"><button class="button secondary" data-ledger="edit-account" data-id="${account.id}">Gestisci</button>${account.archived ? '' : `<button class="button plain" data-ledger="wallet" data-id="${account.id}">Collega Apple Pay</button>`}</div></article>`).join('')}</div>` : `<div class="accounts-empty"><h3>Aggiungi il tuo primo conto o attività</h3><p>Inserisci il saldo esatto di Fineco, Revolut o di un’attività con un nome a tua scelta. Il totale si calcola da solo.</p></div>`}
+  ${accounts.length ? `<div class="account-grid">${accounts.map(account => `<article class="account-card ${account.archived ? 'archived' : ''}"><div class="account-card-title"><h3><span class="account-initial" aria-hidden="true">${esc([...account.name][0].toLocaleUpperCase('it-IT'))}</span>${esc(account.name)}</h3><span>${account.archived ? 'Escluso dal totale' : 'EUR'}</span></div><p class="account-value">${money(Ledger.accountBalance(state, account.id))}</p><p class="account-checkpoint">Saldo verificato il ${stampLabel(account.openingAt)}</p><div class="account-card-actions"><button class="button secondary" data-ledger="edit-account" data-id="${account.id}">Gestisci</button>${account.archived ? '' : `<button class="button plain" data-ledger="wallet" data-id="${account.id}">Collega Apple Pay</button>`}</div></article>`).join('')}</div>` : `<div class="accounts-empty"><h3>Aggiungi il tuo primo conto o attività</h3><p>Inserisci il saldo esatto di Fineco, Revolut o di un’attività con un nome a tua scelta. Il totale si calcola da solo.</p></div>`}
   <p class="accounts-caption">Il totale dei conti è separato dallo storico dei saldi mensili. Aggiungi manualmente entrate, bonifici e spese che non arrivano da Apple Pay. Per ora i conti sono in euro.</p>${full ? '' : '<a class="button plain" href="#conti">Conti e tutti i movimenti →</a>'}</section>
   <section class="panel movements-panel" aria-labelledby="movements-title"><div class="section-top"><div><h2 id="movements-title">${full ? 'Movimenti' : 'Ultimi movimenti'}</h2><p>Spese, entrate e pagamenti Apple Pay.</p></div><button class="button secondary" data-ledger="new-movement" ${active.length ? '' : 'disabled'}>Aggiungi movimento</button></div>
-  ${full ? `<label for="movement-filter">Filtra per conto</label><select id="movement-filter"><option value="">Tutti i conti</option>${state.accounts.map(account => `<option value="${account.id}" ${accountFilter === account.id ? 'selected' : ''}>${esc(account.name)}</option>`).join('')}</select>` : ''}
+  ${full ? `<div class="movement-filters"><div><label for="movement-filter">Filtra per conto</label><select id="movement-filter"><option value="">Tutti i conti</option>${state.accounts.map(account => `<option value="${account.id}" ${accountFilter === account.id ? 'selected' : ''}>${esc(account.name)}</option>`).join('')}</select></div><div><label for="movement-kind-filter">Tipo di movimento</label><select id="movement-kind-filter"><option value="all" ${kind === 'all' ? 'selected' : ''}>Entrate e uscite</option><option value="income" ${kind === 'income' ? 'selected' : ''}>Entrate</option><option value="expense" ${kind === 'expense' ? 'selected' : ''}>Uscite</option></select></div><div><label for="movement-search">Cerca un movimento</label><input id="movement-search" type="search" autocomplete="off" placeholder="Descrizione o conto" value="${esc(search)}"></div></div>` : ''}
   ${visible.length ? `<div class="movement-list">${visible.map(item => {
     const account = state.accounts.find(account => account.id === item.accountId), included = item.occurredAt > account.openingAt;
     return `<article class="movement-row ${item.voided ? 'voided' : ''}"><div><h3>${esc(item.merchant || (item.amountCents < 0 ? 'Spesa' : 'Entrata'))}</h3><p>${esc(account.name)} · ${stampLabel(item.occurredAt)}<br>${item.source === 'apple-pay' ? 'Apple Pay' : 'Manuale'}${item.voided ? ' · Annullato' : !included ? ' · Già compreso nel saldo verificato' : ''}</p></div><div class="movement-amount"><strong class="${item.amountCents < 0 ? 'negative' : 'positive'}">${item.amountCents > 0 ? '+' : ''}${money(item.amountCents)}</strong>${item.voided ? '' : `<button class="edit-button" data-ledger="void-movement" data-id="${item.id}" aria-label="Annulla movimento ${esc(item.merchant)}">Annulla</button>`}</div></article>`;
-  }).join('')}</div>` : '<p class="empty-state">Nessun movimento. I pagamenti appariranno qui dopo aver configurato Comandi Rapidi sul tuo iPhone.</p>'}
+  }).join('')}</div>` : `<p class="empty-state">${accountFilter || query || kind !== 'all' ? 'Nessun movimento corrisponde ai filtri selezionati.' : 'Nessun movimento. Aggiungi una spesa o un’entrata, oppure collega Apple Pay.'}</p>`}
   ${full && pages > 1 ? `<div class="movement-pagination"><button class="button secondary" data-ledger="previous-page" ${page ? '' : 'disabled'}>Precedenti</button><span>${page + 1} / ${pages}</span><button class="button secondary" data-ledger="next-page" ${page < pages - 1 ? '' : 'disabled'}>Successivi</button></div>` : ''}</section>`;
+  return movementsOnly ? markup.slice(markup.indexOf('<section class="panel movements-panel"')) : markup;
 }
 
 export function createAccountsUi({ getState, getOwner, money, persist, render, toast, confirmAction, walletLinks, synchronize }) {
   let editing = null, editingRevision = null, walletAccount = null, secret = '', generation = 0;
-  let page = 0, previousAccountFilter = null;
+  let page = 0, previousAccountFilter = null, movementAccountFilter = '', movementSearch = '', movementKind = 'all';
   const selectedAccount = () => location.hash.startsWith('#conti/') ? getState().accounts.find(account => account.id === location.hash.slice('#conti/'.length)) || null : null;
   document.body.insertAdjacentHTML('beforeend', `
   <dialog id="bank-account-dialog" aria-labelledby="bank-account-title"><form id="bank-account-form"><div class="dialog-header"><h2 id="bank-account-title">Aggiungi conto</h2><button class="icon-button" type="button" data-close aria-label="Chiudi">×</button></div><label for="bank-name">Nome del conto o attività</label><input id="bank-name" maxlength="60" placeholder="Es. Fineco, Revolut, attività virtuali" required autocomplete="off"><label for="bank-balance">Saldo esatto attuale (€)</label><input id="bank-balance" inputmode="decimal" autocomplete="off" placeholder="0,00" required><p id="bank-balance-help" class="field-help">Inserisci il saldo attuale. Le nuove spese verranno scalate da questo importo.</p><label class="ledger-check" for="bank-reconcile"><input id="bank-reconcile" type="checkbox">Ho verificato il saldo e voglio sostituirlo</label><label class="ledger-check" for="bank-archived"><input id="bank-archived" type="checkbox">Escludi questo conto dal totale</label><p id="bank-error" class="form-error" role="alert"></p><div class="dialog-actions"><button class="button secondary" type="button" data-close>Annulla</button><button class="button primary" type="submit">Salva conto</button></div></form></dialog>
@@ -40,7 +42,7 @@ export function createAccountsUi({ getState, getOwner, money, persist, render, t
   <dialog id="wallet-dialog" aria-labelledby="wallet-title"><div class="dialog-header"><h2 id="wallet-title">Collega Apple Pay</h2><button class="icon-button" type="button" data-close aria-label="Chiudi">×</button></div><div id="wallet-content"></div></dialog>`);
   const $ = selector => document.querySelector(selector);
   const ownerIs = owner => owner && owner === getOwner();
-  function reset() { generation++; secret = ''; walletAccount = null; editing = null; previousAccountFilter = null; page = 0; $('#wallet-content').replaceChildren(); }
+  function reset() { generation++; secret = ''; walletAccount = null; editing = null; previousAccountFilter = null; movementAccountFilter = ''; movementSearch = ''; movementKind = 'all'; page = 0; $('#wallet-content').replaceChildren(); }
   $('#wallet-dialog').addEventListener('close', () => { generation++; secret = ''; walletAccount = null; $('#wallet-content').replaceChildren(); });
   $('#bank-account-dialog').addEventListener('close', () => { editing = null; $('#bank-account-form').reset(); });
   $('#movement-dialog').addEventListener('close', () => $('#movement-form').reset());
@@ -100,7 +102,15 @@ export function createAccountsUi({ getState, getOwner, money, persist, render, t
       if (run === generation && ownerIs(owner)) $('#wallet-content').innerHTML = walletMarkup(result.links.some(link => link.accountId === id));
     } catch (error) { if (run === generation && ownerIs(owner)) $('#wallet-content').innerHTML = `<p class="form-error">${esc(error.message)}</p><p>Connettiti a internet e sincronizza il conto prima di collegare Apple Pay.</p>`; }
   }
-  document.addEventListener('change', event => { if (event.target.id === 'movement-filter') { page = 0; location.hash = event.target.value ? 'conti/' + event.target.value : 'conti'; } });
+  document.addEventListener('input', event => {
+    if (event.target.id !== 'movement-search') return;
+    const position = event.target.selectionStart;
+    movementSearch = event.target.value; page = 0; render();
+    const field = document.querySelector('#movement-search');
+    field?.focus({ preventScroll: true }); field?.setSelectionRange(position, position);
+  });
+  document.addEventListener('change', event => { if (event.target.id === 'movement-kind-filter') { movementKind = event.target.value; page = 0; render(); } });
+  document.addEventListener('change', event => { if (event.target.id === 'movement-filter') { page = 0; if (location.hash === '#movimenti') { movementAccountFilter = event.target.value; render(); return; } location.hash = event.target.value ? 'conti/' + event.target.value : 'conti'; } });
   document.addEventListener('click', async event => {
     const button = event.target.closest('[data-ledger]'); if (!button || !getOwner()) return;
     const action = button.dataset.ledger, id = button.dataset.id;
@@ -145,10 +155,10 @@ export function createAccountsUi({ getState, getOwner, money, persist, render, t
   return {
     reset, selectedAccount,
     sidebarMarkup: () => getState().accounts.length ? getState().accounts.map(account => `<li><a href="#conti/${account.id}" class="sidebar-account-link ${selectedAccount()?.id === account.id ? 'active' : ''}" ${selectedAccount()?.id === account.id ? 'aria-current="page"' : ''} title="${esc(account.name)}"><span class="sidebar-account-initial" aria-hidden="true">${esc([...account.name][0].toLocaleUpperCase('it-IT'))}</span><span class="sidebar-account-name">${esc(account.name)}${account.archived ? '<small>Escluso dal totale</small>' : ''}</span></a></li>`).join('') : '<li class="sidebar-accounts-empty">Aggiungi il tuo primo conto o attività.</li>',
-    markup: full => {
-      const accountFilter = full ? selectedAccount()?.id || '' : '';
+    markup: (full, movementsOnly = false) => {
+      const accountFilter = movementsOnly ? movementAccountFilter : full ? selectedAccount()?.id || '' : '';
       if (accountFilter !== previousAccountFilter) { page = 0; previousAccountFilter = accountFilter; }
-      return accountsMarkup(getState(), money, { full, accountFilter, page });
+      return accountsMarkup(getState(), money, { full, accountFilter, page, movementsOnly, search: full ? movementSearch : '', kind: full ? movementKind : 'all' });
     }
   };
 }
