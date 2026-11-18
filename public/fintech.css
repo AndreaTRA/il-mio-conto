@@ -147,7 +147,7 @@ dialog{background:var(--paper);border-color:#ffffff15;border-radius:20px;padding
  .table-intro{padding:21px}th,td{padding-inline:20px}.main-footer{font-size:10px}#toast{bottom:calc(95px + var(--safe-area-bottom))}.chart-selection{font-size:10px}
 }
 @media(max-width:560px){
- .host-dashboard{grid-template-columns:minmax(0,1fr);grid-template-areas:"cash" "accounts" "transactions" "actions" "goal";gap:15px}.host-dashboard>.panel{padding:20px}.host-cashflows{min-height:327px}.host-cashflows .section-top{flex-direction:column;align-items:flex-start;gap:10px}.host-cashflows .chart-controls{width:100%;justify-content:space-between}.host-cashflows .echart{height:221px}.host-cashflows .chart-footnote{font-size:9px}.chart-footnote{font-size:10px}
+ .host-dashboard{grid-template-columns:minmax(0,1fr);grid-template-areas:"cash" "goal" "actions" "allocation" "accounts" "transactions";gap:15px}.host-dashboard>.panel{padding:20px}.host-cashflows{min-height:327px}.host-cashflows .section-top{flex-direction:column;align-items:flex-start;gap:10px}.host-cashflows .chart-controls{width:100%;justify-content:space-between}.host-cashflows .echart{height:221px}.host-cashflows .chart-footnote{font-size:9px}.chart-footnote{font-size:10px}
  .host-accounts,.host-goal{min-height:0}.host-account{grid-template-columns:35px minmax(0,1fr) auto;gap:11px}.host-account b{grid-column:auto;grid-row:auto;justify-self:end;align-self:center;margin-top:0;font-size:12px}.bank-avatar{width:33px;height:33px;grid-row:auto}.host-account strong{font-size:13px}.host-account small{font-size:10px}.account-status{font-size:10px}.host-accounts>.button{min-height:44px;font-size:12px;margin-top:18px}
  .host-transactions,.host-actions{min-height:0}.host-transactions>.plain{min-height:44px;font-size:11px}.host-movement{padding:17px 0}.host-movement strong{font-size:13px}.host-movement-value b{font-size:12px}.host-action{padding:17px 0}.host-action strong{font-size:13px}.host-action small{font-size:11px}
  .host-goal .goal-ring-layout{width:180px;height:180px}.host-goal .echart{height:180px}.goal-ring-center strong{font-size:30px}.goal-figures{font-size:11px}.goal-figures strong{font-size:15px}.goal-monthly{padding:15px}.goal-monthly span{font-size:11px}.goal-monthly strong{font-size:24px}.goal-deadline{font-size:10px;margin-top:12px}.goal-concealed{height:170px}
@@ -182,3 +182,6 @@ dialog{background:var(--paper);border-color:#ffffff15;border-radius:20px;padding
 }
 @media(max-width:360px){.page-heading:has(.heading-actions){flex-wrap:wrap}.page-heading:has(.heading-actions)>div:first-child{flex-basis:100%}.page-heading .heading-actions{padding-top:0}.mobile-balance-summary strong{font-size:21px}}
 .chart-key.is-line i{background:#6cbba4}
+
+/* Phone priorities: goal and pending checks precede accounts and activity. */
+@media(max-width:560px){.host-dashboard>.allocation-panel{grid-area:allocation}.host-insights:has(>.history-panel:only-child){grid-template-columns:minmax(0,1fr)}}
